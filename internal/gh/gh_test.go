@@ -115,7 +115,9 @@ func TestPRCreate(t *testing.T) {
 	recordFile := setupFakeGH(t)
 	ctx := context.Background()
 
-	num, err := PRCreate(ctx, "main", "feature/foo", "My PR", "Some body", false)
+	num, err := PRCreate(ctx, PRCreateOpts{
+		Base: "main", Head: "feature/foo", Title: "My PR", Body: "Some body",
+	})
 	if err != nil {
 		t.Fatalf("PRCreate() error: %v", err)
 	}
@@ -146,7 +148,9 @@ func TestPRCreate_Draft(t *testing.T) {
 	recordFile := setupFakeGH(t)
 	ctx := context.Background()
 
-	num, err := PRCreate(ctx, "main", "feature/bar", "Draft PR", "WIP", true)
+	num, err := PRCreate(ctx, PRCreateOpts{
+		Base: "main", Head: "feature/bar", Title: "Draft PR", Body: "WIP", Draft: true,
+	})
 	if err != nil {
 		t.Fatalf("PRCreate() error: %v", err)
 	}
@@ -224,7 +228,9 @@ func TestPRCreate_Error(t *testing.T) {
 	_ = setupFailingGH(t)
 	ctx := context.Background()
 
-	_, err := PRCreate(ctx, "main", "feature/fail", "Fail", "body", false)
+	_, err := PRCreate(ctx, PRCreateOpts{
+		Base: "main", Head: "feature/fail", Title: "Fail", Body: "body",
+	})
 	if err == nil {
 		t.Fatal("PRCreate() should return error when gh fails")
 	}
