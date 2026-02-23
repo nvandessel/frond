@@ -29,6 +29,10 @@ func runTrack(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	name := args[0]
 
+	if err := validateBranchName(name); err != nil {
+		return err
+	}
+
 	// 1. Lock state, defer unlock
 	unlock, err := state.Lock(ctx)
 	if err != nil {
