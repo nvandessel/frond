@@ -112,6 +112,13 @@ func PREdit(ctx context.Context, prNumber int, newBase string) error {
 	return err
 }
 
+// PR state constants returned by the GitHub API.
+const (
+	PRStateOpen   = "OPEN"
+	PRStateClosed = "CLOSED"
+	PRStateMerged = "MERGED"
+)
+
 // PRState returns the state of a pull request ("OPEN", "CLOSED", or "MERGED").
 func PRState(ctx context.Context, prNumber int) (string, error) {
 	info, err := PRView(ctx, prNumber)
