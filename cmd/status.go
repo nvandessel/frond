@@ -46,7 +46,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// 2. Convert state.Branch -> dag.BranchInfo for all branches.
-	branches := stateToDagBranches(s)
+	branches := stateToDag(s.Branches)
 
 	// 3. Build prNumbers map from state branches' PR fields.
 	prNumbers := make(map[string]*int, len(s.Branches))
@@ -72,18 +72,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return outputJSON(s.Trunk, branches, prNumbers, prStates)
 	}
 	return outputHuman(s.Trunk, branches, prNumbers, readinessMap, prStates)
-}
-
-// stateToDagBranches converts state.Branch entries to dag.BranchInfo entries.
-func stateToDagBranches(s *state.State) map[string]dag.BranchInfo {
-	branches := make(map[string]dag.BranchInfo, len(s.Branches))
-	for name, b := range s.Branches {
-		branches[name] = dag.BranchInfo{
-			Parent: b.Parent,
-			After:  b.After,
-		}
-	}
-	return branches
 }
 
 // fetchPRStates calls gh.PRView for each branch that has a PR number.
