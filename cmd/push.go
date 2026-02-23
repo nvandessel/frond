@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -42,7 +41,7 @@ func humanizeTitle(branch string) string {
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	// 1. Check gh is available.
 	if err := gh.Available(); err != nil {

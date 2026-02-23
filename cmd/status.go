@@ -35,7 +35,7 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	// 1. Read state (do NOT create state if missing).
 	s, err := state.Read(ctx)
