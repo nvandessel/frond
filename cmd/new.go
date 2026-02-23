@@ -108,16 +108,15 @@ func runNew(cmd *cobra.Command, args []string) error {
 
 	// 9. Output
 	if jsonOut {
-		printJSON(newResult{
+		return printJSON(newResult{
 			Name:   name,
 			Parent: parent,
 			After:  after,
 		})
-	} else {
-		fmt.Printf("Created and checked out branch '%s' (parent: %s)\n", name, parent)
-		if len(after) > 0 {
-			fmt.Printf("Dependencies: %s\n", strings.Join(after, ", "))
-		}
+	}
+	fmt.Printf("Created and checked out branch '%s' (parent: %s)\n", name, parent)
+	if len(after) > 0 {
+		fmt.Printf("Dependencies: %s\n", strings.Join(after, ", "))
 	}
 
 	return nil

@@ -107,18 +107,15 @@ func outputJSON(trunk string, branches map[string]dag.BranchInfo, prNumbers map[
 				PRState:    prStates[jb.Name],
 			}
 		}
-		printJSON(statusFetchResult{
+		return printJSON(statusFetchResult{
 			Trunk:    trunk,
 			Branches: wrapped,
 		})
-	} else {
-		printJSON(statusJSONResult{
-			Trunk:    trunk,
-			Branches: jsonBranches,
-		})
 	}
-
-	return nil
+	return printJSON(statusJSONResult{
+		Trunk:    trunk,
+		Branches: jsonBranches,
+	})
 }
 
 // outputHuman renders the ASCII tree and optionally a PR states section.

@@ -104,22 +104,21 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 		if unblocked == nil {
 			unblocked = []string{}
 		}
-		printJSON(untrackResult{
+		return printJSON(untrackResult{
 			Name:       name,
 			Reparented: reparented,
 			Unblocked:  unblocked,
 		})
-	} else {
-		fmt.Printf("Untracked branch '%s'\n", name)
-		if len(reparented) > 0 {
-			for _, child := range reparented {
-				fmt.Printf("  Reparented '%s' to '%s'\n", child, removedParent)
-			}
+	}
+	fmt.Printf("Untracked branch '%s'\n", name)
+	if len(reparented) > 0 {
+		for _, child := range reparented {
+			fmt.Printf("  Reparented '%s' to '%s'\n", child, removedParent)
 		}
-		if len(unblocked) > 0 {
-			for _, dep := range unblocked {
-				fmt.Printf("  Removed '%s' from '%s' dependencies\n", name, dep)
-			}
+	}
+	if len(unblocked) > 0 {
+		for _, dep := range unblocked {
+			fmt.Printf("  Removed '%s' from '%s' dependencies\n", name, dep)
 		}
 	}
 

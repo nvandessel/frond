@@ -61,10 +61,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Edge case: no tracked branches.
 	if len(st.Branches) == 0 {
 		if jsonOut {
-			printJSON(newEmptySyncResult())
-		} else {
-			fmt.Println("nothing to sync")
+			return printJSON(newEmptySyncResult())
 		}
+		fmt.Println("nothing to sync")
 		return nil
 	}
 
@@ -222,16 +221,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Edge case: nothing happened at all.
 	if len(mergedBranches) == 0 && len(result.Rebased) == 0 && len(result.Blocked) == 0 && conflictBranch == "" {
 		if jsonOut {
-			printJSON(result)
-		} else {
-			fmt.Println("already up to date")
+			return printJSON(result)
 		}
+		fmt.Println("already up to date")
 		return nil
 	}
 
 	// Step 8: Print summary.
 	if jsonOut {
-		printJSON(result)
+		if err := printJSON(result); err != nil {
+			return fmt.Errorf("encoding JSON: %w", err)
+		}
 	} else {
 		fmt.Println("Synced:")
 		for _, a := range actions {
@@ -244,7 +244,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		if !jsonOut {
 			fmt.Fprintf(os.Stderr, "conflict: %s \u2014 resolve and run 'tier sync' again\n", conflictBranch)
 		}
-		os.Exit(2)
+		return &ExitError{Code: 2}
 	}
 
 	return nil
