@@ -1,0 +1,58 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - misspell
+    - goconst
+  disable:
+    - lll
+    - gocyclo
+    - funlen
+    - godot
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*github.com/spf13/cobra.Command).MarkFlagRequired
+        - os.Remove
+        - (*encoding/json.Encoder).Encode
+    gosec:
+      excludes:
+        - G104  # Unhandled errors — too noisy
+        - G115  # Integer overflow conversion — false positives on bounded values
+        - G204  # Subprocess with variable — we shell out to git/gh intentionally
+    goconst:
+      min-occurrences: 10
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - goconst
+      - text: "Error return value of .*.Close.*is not checked"
+        linters:
+          - errcheck
+      # Suppress staticcheck style suggestions
+      - text: "^QF"
+        linters:
+          - staticcheck
+      - text: "^S1"
+        linters:
+          - staticcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
