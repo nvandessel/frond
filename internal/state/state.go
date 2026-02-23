@@ -32,6 +32,9 @@ type State struct {
 	Branches map[string]Branch `json:"branches"`
 }
 
+// ErrNotInitialized is returned by Read when tier.json does not exist.
+var ErrNotInitialized = errors.New("no tier state found; run 'tier new' or 'tier track' first")
+
 const (
 	stateFile = "tier.json"
 	lockFile  = "tier.json.lock"
@@ -64,7 +67,7 @@ func Path(ctx context.Context) (string, error) {
 }
 
 // Read parses tier.json and returns the state. If the file does not exist,
-// it returns (nil, nil) — meaning no state has been initialised yet.
+// it returns ErrNotInitialized.
 func Read(ctx context.Context) (*State, error) {
 	p, err := Path(ctx)
 	if err != nil {
@@ -74,7 +77,7 @@ func Read(ctx context.Context) (*State, error) {
 	data, err := os.ReadFile(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, ErrNotInitialized
 		}
 		return nil, fmt.Errorf("reading %s: %w", p, err)
 	}
@@ -235,7 +238,7 @@ func rejectSymlink(path string) error {
 // it creates an initial state with auto-detected trunk and writes it out.
 func ReadOrInit(ctx context.Context) (*State, error) {
 	s, err := Read(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotInitialized) {
 		return nil, err
 	}
 	if s != nil {

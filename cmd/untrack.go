@@ -34,9 +34,6 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading state: %w", err)
 	}
-	if s == nil {
-		return fmt.Errorf("no tier state found. Run 'tier new' or 'tier track' first")
-	}
 
 	// 3. Resolve branch: arg or current branch
 	var name string

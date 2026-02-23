@@ -66,9 +66,6 @@ func runPush(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("reading state: %w", err)
 	}
-	if st == nil {
-		return fmt.Errorf("no tier state found. Run 'tier new' or 'tier track' first")
-	}
 
 	// 5. Current branch must be tracked.
 	br, ok := st.Branches[branch]
