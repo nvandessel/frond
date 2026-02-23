@@ -3,9 +3,11 @@ package state
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,6 +82,25 @@ func TestReadMissingFile(t *testing.T) {
 	}
 	if s != nil {
 		t.Errorf("Read() on missing file returned non-nil state: %+v", s)
+	}
+}
+
+func TestReadMalformedJSON(t *testing.T) {
+	dir := setupGitRepo(t)
+	ctx := context.Background()
+
+	// Write garbage to tier.json.
+	p := filepath.Join(dir, ".git", stateFile)
+	if err := os.WriteFile(p, []byte("{invalid json"), 0o644); err != nil {
+		t.Fatalf("writing malformed file: %v", err)
+	}
+
+	_, err := Read(ctx)
+	if err == nil {
+		t.Fatal("Read() should return error for malformed JSON")
+	}
+	if !strings.Contains(err.Error(), "parsing") {
+		t.Errorf("error = %q, want to contain 'parsing'", err.Error())
 	}
 }
 
@@ -365,5 +386,112 @@ func TestWriteCreatesParentDirs(t *testing.T) {
 	p := filepath.Join(nestedDir, stateFile)
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("state file not created at %s: %v", p, err)
+	}
+}
+
+func TestWriteReadOnlyDir(t *testing.T) {
+	// Write should fail if the directory is read-only (can't write temp file).
+	tmpDir := t.TempDir()
+	roDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(roDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := gitCommonDir
+	gitCommonDir = func(_ context.Context) (string, error) {
+		return roDir, nil
+	}
+	t.Cleanup(func() { gitCommonDir = orig })
+
+	// Make it read-only AFTER creating the dir.
+	os.Chmod(roDir, 0o555)
+	t.Cleanup(func() { os.Chmod(roDir, 0o755) })
+
+	ctx := context.Background()
+	s := &State{Version: 1, Trunk: "main", Branches: map[string]Branch{}}
+	err := Write(ctx, s)
+	if err == nil {
+		t.Fatal("Write() should fail on read-only directory")
+	}
+}
+
+func TestLockDoubleLockFails(t *testing.T) {
+	setupGitRepo(t)
+	ctx := context.Background()
+
+	// First lock should succeed.
+	unlock1, err := Lock(ctx)
+	if err != nil {
+		t.Fatalf("first Lock() error: %v", err)
+	}
+
+	// Second lock should fail (lockfile is fresh, not stale).
+	_, err = Lock(ctx)
+	if err == nil {
+		t.Fatal("second Lock() should fail while first is held")
+	}
+	if !strings.Contains(err.Error(), "held by another process") {
+		t.Errorf("error = %q, want 'held by another process'", err.Error())
+	}
+
+	unlock1()
+}
+
+func TestPathError(t *testing.T) {
+	// Override gitCommonDir to return an error.
+	orig := gitCommonDir
+	gitCommonDir = func(_ context.Context) (string, error) {
+		return "", fmt.Errorf("git not found")
+	}
+	t.Cleanup(func() { gitCommonDir = orig })
+
+	ctx := context.Background()
+
+	_, err := Path(ctx)
+	if err == nil {
+		t.Fatal("Path() should fail when gitCommonDir fails")
+	}
+
+	_, err = Read(ctx)
+	if err == nil {
+		t.Fatal("Read() should fail when Path() fails")
+	}
+
+	err = Write(ctx, &State{Version: 1, Trunk: "main", Branches: map[string]Branch{}})
+	if err == nil {
+		t.Fatal("Write() should fail when Path() fails")
+	}
+
+	_, err = Lock(ctx)
+	if err == nil {
+		t.Fatal("Lock() should fail when gitCommonDir fails")
+	}
+}
+
+func TestReadOrInitExistingState(t *testing.T) {
+	dir := setupGitRepo(t)
+	ctx := context.Background()
+
+	run(t, dir, "git", "branch", "-M", "main")
+
+	// First call creates state.
+	s1, err := ReadOrInit(ctx)
+	if err != nil {
+		t.Fatalf("ReadOrInit() error: %v", err)
+	}
+
+	// Add a branch to distinguish from a fresh init.
+	s1.Branches["test-branch"] = Branch{Parent: "main", After: []string{}}
+	if err := Write(ctx, s1); err != nil {
+		t.Fatalf("Write() error: %v", err)
+	}
+
+	// Second call should read existing state (not re-init).
+	s2, err := ReadOrInit(ctx)
+	if err != nil {
+		t.Fatalf("second ReadOrInit() error: %v", err)
+	}
+	if _, ok := s2.Branches["test-branch"]; !ok {
+		t.Error("ReadOrInit() re-initialized instead of reading existing state")
 	}
 }
