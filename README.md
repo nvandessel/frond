@@ -5,7 +5,9 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/nvandessel/tier)](https://goreportcard.com/report/github.com/nvandessel/tier)
 [![Release](https://img.shields.io/github/v/release/nvandessel/tier)](https://github.com/nvandessel/tier/releases/latest)
 
-Minimal, agent-first CLI for managing stacked PRs with DAG dependencies on GitHub. Single binary. Zero config.
+Minimal, agent-first CLI for managing stacked PRs with DAG dependencies on GitHub. 
+
+Single binary. Zero config.
 
 ## Install
 
@@ -47,13 +49,36 @@ main
 
 `--json` on every command. Exit codes: 0 success, 1 error, 2 conflict.
 
+## Stacking patterns
+
+`--on` creates the git/PR hierarchy (deep stacking). `--after` creates logical dependencies (wide fan-out). Combine both for real-world use:
+
+```bash
+tier new feature/payments        --on main
+tier new pay/stripe-client       --on feature/payments
+tier new pay/stripe-tests        --on pay/stripe-client                              # deep: stacks on stripe-client
+tier new pay/db-schema           --on feature/payments
+tier new pay/db-migrations       --on pay/db-schema                                  # deep: stacks on db-schema
+tier new pay/api-handlers        --on feature/payments  --after pay/stripe-client,pay/db-schema    # wide: fan-out deps
+tier new pay/e2e                 --on feature/payments  --after pay/api-handlers,pay/stripe-tests,pay/db-migrations
+```
+
+```
+main
+└── feature/payments                        PR → main
+    ├── pay/stripe-client                   PR → feature/payments  [ready]
+    │   └── pay/stripe-tests                PR → pay/stripe-client  [ready]
+    ├── pay/db-schema                       PR → feature/payments  [ready]
+    │   └── pay/db-migrations               PR → pay/db-schema  [ready]
+    ├── pay/api-handlers                    PR → feature/payments  [blocked: stripe-client, db-schema]
+    └── pay/e2e                             PR → feature/payments  [blocked: api-handlers, stripe-tests, db-migrations]
+```
+
+When `pay/stripe-client` merges, `tier sync` reparents `pay/stripe-tests`, unblocks `pay/api-handlers`, and rebases what's ready.
+
 ## Key concepts
 
 - **`--on`** sets the git parent (PR base). One per branch.
 - **`--after`** sets logical dependencies (merge ordering). Zero or more.
-- These are orthogonal: `--on` creates the PR hierarchy, `--after` creates the DAG.
+- These are orthogonal — `--on` for PR targeting, `--after` for merge ordering.
 - State lives at `<git-common-dir>/tier.json` — shared across worktrees, invisible to the working tree.
-
-## License
-
-Apache 2.0
