@@ -251,15 +251,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// stateToDag converts state.Branch map to dag.BranchInfo map.
-func stateToDag(branches map[string]state.Branch) map[string]dag.BranchInfo {
-	m := make(map[string]dag.BranchInfo, len(branches))
-	for name, b := range branches {
-		m[name] = dag.BranchInfo{Parent: b.Parent, After: b.After}
-	}
-	return m
-}
-
 // removeFromSlice returns a new slice with all occurrences of val removed.
 // Returns nil if the result would be empty.
 func removeFromSlice(s []string, val string) []string {
