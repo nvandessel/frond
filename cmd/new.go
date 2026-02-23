@@ -35,20 +35,20 @@ func runNew(cmd *cobra.Command, args []string) error {
 	// 1. Lock state, defer unlock
 	unlock, err := state.Lock(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer unlock()
 
 	// 2. ReadOrInit state
 	s, err := state.ReadOrInit(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading state: %w", err)
 	}
 
 	// Check if branch already exists in git
 	exists, err := git.BranchExists(ctx, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("checking branch existence: %w", err)
 	}
 	if exists {
 		return fmt.Errorf("branch '%s' already exists. Use 'tier track' to add it", name)
@@ -90,7 +90,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 
 	// 6. git.CreateBranch (also checks it out)
 	if err := git.CreateBranch(ctx, name, parent); err != nil {
-		return err
+		return fmt.Errorf("creating branch: %w", err)
 	}
 
 	// 7. Write branch to state.Branches
@@ -104,7 +104,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 
 	// 8. Write state
 	if err := state.Write(ctx, s); err != nil {
-		return err
+		return fmt.Errorf("writing state: %w", err)
 	}
 
 	// 9. Output

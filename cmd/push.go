@@ -52,20 +52,20 @@ func runPush(cmd *cobra.Command, args []string) error {
 	// 2. Get current branch.
 	branch, err := git.CurrentBranch(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("getting current branch: %w", err)
 	}
 
 	// 3. Lock state, defer unlock.
 	unlock, err := state.Lock(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer unlock()
 
 	// 4. Read state (not ReadOrInit).
 	st, err := state.Read(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading state: %w", err)
 	}
 	if st == nil {
 		return fmt.Errorf("no tier state found. Run 'tier new' or 'tier track' first")
@@ -79,7 +79,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	// 6. Push to origin.
 	if err := git.Push(ctx, branch); err != nil {
-		return err
+		return fmt.Errorf("pushing to origin: %w", err)
 	}
 
 	created := false
@@ -102,13 +102,13 @@ func runPush(cmd *cobra.Command, args []string) error {
 			Draft: draft,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("creating PR: %w", err)
 		}
 
 		br.PR = &prNumber
 		st.Branches[branch] = br
 		if err := state.Write(ctx, st); err != nil {
-			return err
+			return fmt.Errorf("writing state: %w", err)
 		}
 		created = true
 	} else {
@@ -117,12 +117,12 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 		info, err := gh.PRView(ctx, prNumber)
 		if err != nil {
-			return err
+			return fmt.Errorf("viewing PR #%d: %w", prNumber, err)
 		}
 
 		if info.BaseRefName != br.Parent {
 			if err := gh.PREdit(ctx, prNumber, br.Parent); err != nil {
-				return err
+				return fmt.Errorf("retargeting PR #%d: %w", prNumber, err)
 			}
 		}
 	}

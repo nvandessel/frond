@@ -26,14 +26,14 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 	// 1. Lock state, defer unlock
 	unlock, err := state.Lock(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer unlock()
 
 	// 2. Read state (not ReadOrInit — if no state, error)
 	s, err := state.Read(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading state: %w", err)
 	}
 	if s == nil {
 		return fmt.Errorf("no tier state found. Run 'tier new' or 'tier track' first")
@@ -46,7 +46,7 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 	} else {
 		current, err := git.CurrentBranch(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("getting current branch: %w", err)
 		}
 		name = current
 	}
@@ -94,7 +94,7 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 
 	// 8. Write state
 	if err := state.Write(ctx, s); err != nil {
-		return err
+		return fmt.Errorf("writing state: %w", err)
 	}
 
 	// 9. Output
