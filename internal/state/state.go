@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -105,6 +107,12 @@ func Write(ctx context.Context, s *State) error {
 	data = append(data, '\n')
 
 	tmp := filepath.Join(dir, tmpFile)
+	if err := rejectSymlink(tmp); err != nil {
+		return err
+	}
+	if err := rejectSymlink(p); err != nil {
+		return err
+	}
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("writing temp file %s: %w", tmp, err)
 	}
@@ -141,12 +149,14 @@ func Lock(ctx context.Context) (unlock func(), err error) {
 		return noop, err
 	}
 	if !acquired {
-		// Check for staleness.
+		// Check for staleness: lock is stale if mtime exceeds threshold
+		// OR if the PID recorded in the lockfile is no longer running.
 		info, statErr := os.Stat(lockPath)
 		if statErr != nil {
 			return noop, fmt.Errorf("stat lockfile %s: %w", lockPath, statErr)
 		}
-		if time.Since(info.ModTime()) > lockStaleDuration {
+		stale := time.Since(info.ModTime()) > lockStaleDuration || !lockPIDAlive(lockPath)
+		if stale {
 			// Stale lock — remove and retry once.
 			if removeErr := os.Remove(lockPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 				return noop, fmt.Errorf("removing stale lockfile %s: %w", lockPath, removeErr)
@@ -169,7 +179,7 @@ func Lock(ctx context.Context) (unlock func(), err error) {
 }
 
 // tryLock attempts to create the lockfile exclusively. Returns true if
-// the lock was acquired.
+// the lock was acquired. It writes the current PID for stale detection.
 func tryLock(path string) (bool, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -178,11 +188,49 @@ func tryLock(path string) (bool, error) {
 		}
 		return false, fmt.Errorf("creating lockfile %s: %w", path, err)
 	}
-	f.Close()
+	// Write PID so stale lock detection can check process liveness.
+	fmt.Fprintf(f, "%d\n", os.Getpid())
+	if err := f.Close(); err != nil {
+		// Close failed — lock may not be durable. Clean up and report.
+		os.Remove(path)
+		return false, fmt.Errorf("closing lockfile %s: %w", path, err)
+	}
 	return true, nil
 }
 
 func noop() {}
+
+// lockPIDAlive reads the PID from a lockfile and checks if that process
+// is still running. Returns false if the PID cannot be read or the process
+// is not alive.
+func lockPIDAlive(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	// Signal 0 checks process existence without sending a real signal.
+	return syscall.Kill(pid, 0) == nil
+}
+
+// rejectSymlink returns an error if the given path is a symlink.
+// This is a defense-in-depth measure to prevent symlink attacks.
+func rejectSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // path doesn't exist yet, that's fine
+		}
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symlink — refusing to write", path)
+	}
+	return nil
+}
 
 // ReadOrInit reads existing state from tier.json. If no state file exists,
 // it creates an initial state with auto-detected trunk and writes it out.
