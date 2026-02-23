@@ -9,12 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/nvandessel/tier/internal/git"
 )
 
 // Branch holds metadata for a single tracked branch.
@@ -42,12 +43,10 @@ const (
 
 // gitCommonDir is a package-level variable so tests can override it.
 var gitCommonDir = func(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-common-dir")
-	out, err := cmd.Output()
+	dir, err := git.CommonDir(ctx)
 	if err != nil {
-		return "", fmt.Errorf("git rev-parse --git-common-dir: %w", err)
+		return "", err
 	}
-	dir := strings.TrimSpace(string(out))
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("resolving absolute path: %w", err)
@@ -263,10 +262,13 @@ func ReadOrInit(ctx context.Context) (*State, error) {
 // detectTrunk determines the trunk branch name. It checks for "main" first,
 // then "master", defaulting to "main" if neither exists.
 func detectTrunk(ctx context.Context) (string, error) {
-	for _, branch := range []string{"main", "master"} {
-		cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "refs/heads/"+branch)
-		if err := cmd.Run(); err == nil {
-			return branch, nil
+	for _, name := range []string{"main", "master"} {
+		exists, err := git.BranchExists(ctx, name)
+		if err != nil {
+			return "", fmt.Errorf("checking branch %s: %w", name, err)
+		}
+		if exists {
+			return name, nil
 		}
 	}
 	return "main", nil
