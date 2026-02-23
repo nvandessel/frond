@@ -2,6 +2,10 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+## Essential Reading
+
+1. `docs/GO_GUIDELINES.md` — Go coding standards (read before writing code)
+
 ## Quick Reference
 
 ```bash
@@ -10,6 +14,31 @@ bd show <id>          # View issue details
 bd update <id> --status in_progress  # Claim work
 bd close <id>         # Complete work
 bd sync               # Sync with git
+```
+
+## Development
+
+```bash
+go build ./...        # Build
+go test ./...         # Test
+go test -race -coverprofile=coverage.out ./...  # Test with race + coverage
+go vet ./...          # Vet
+gofmt -l .            # Check formatting
+golangci-lint run     # Lint
+```
+
+## Project Structure
+
+```
+tier/
+├── main.go                 # Entry point
+├── cmd/                    # Cobra commands (new, push, sync, status, track, untrack)
+│   └── root.go             # Root command, --json global flag
+└── internal/
+    ├── state/              # tier.json types, read/write, lockfile
+    ├── git/                # Thin git CLI wrapper
+    ├── gh/                 # Thin gh CLI wrapper
+    └── dag/                # Cycle detection, topo sort, readiness, tree rendering
 ```
 
 ## Landing the Plane (Session Completion)
@@ -37,4 +66,3 @@ bd sync               # Sync with git
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-
