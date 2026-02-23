@@ -2,6 +2,7 @@ package gh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -228,8 +229,8 @@ func TestPRCreate_Error(t *testing.T) {
 		t.Fatal("PRCreate() should return error when gh fails")
 	}
 
-	ghErr, ok := err.(*GHError)
-	if !ok {
+	var ghErr *GHError
+	if !errors.As(err, &ghErr) {
 		t.Fatalf("expected *GHError, got %T: %v", err, err)
 	}
 	if !strings.Contains(ghErr.Stderr, "something went wrong") {
@@ -245,7 +246,8 @@ func TestPRView_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("PRView() should return error when gh fails")
 	}
-	if _, ok := err.(*GHError); !ok {
+	var ghErr2 *GHError
+	if !errors.As(err, &ghErr2) {
 		t.Fatalf("expected *GHError, got %T", err)
 	}
 }
@@ -258,7 +260,8 @@ func TestPREdit_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("PREdit() should return error when gh fails")
 	}
-	if _, ok := err.(*GHError); !ok {
+	var ghErr3 *GHError
+	if !errors.As(err, &ghErr3) {
 		t.Fatalf("expected *GHError, got %T", err)
 	}
 }
