@@ -1,5 +1,10 @@
 # tier
 
+[![CI](https://github.com/nvandessel/tier/actions/workflows/ci.yml/badge.svg)](https://github.com/nvandessel/tier/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/nvandessel/tier/branch/main/graph/badge.svg)](https://codecov.io/gh/nvandessel/tier)
+[![Go Report Card](https://goreportcard.com/badge/github.com/nvandessel/tier)](https://goreportcard.com/report/github.com/nvandessel/tier)
+[![Release](https://img.shields.io/github/v/release/nvandessel/tier)](https://github.com/nvandessel/tier/releases/latest)
+
 Agent-first CLI for managing stacked PRs with DAG dependencies on GitHub.
 
 Written in Go. Single binary. Zero config. No accounts. No services.
