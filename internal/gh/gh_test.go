@@ -279,6 +279,9 @@ func TestGHError_Error(t *testing.T) {
 	if !strings.Contains(msg, "not found") {
 		t.Fatalf("expected stderr in error message, got: %s", msg)
 	}
+	if strings.Contains(msg, "\n") {
+		t.Fatalf("error message should not contain newlines, got: %q", msg)
+	}
 }
 
 func TestGHError_Unwrap(t *testing.T) {
