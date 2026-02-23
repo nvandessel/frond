@@ -28,7 +28,7 @@ type GHError struct {
 }
 
 func (e *GHError) Error() string {
-	return fmt.Sprintf("gh %s: %s\n%s", strings.Join(e.Args, " "), e.Err, strings.TrimSpace(e.Stderr))
+	return fmt.Sprintf("gh %s: %s", strings.Join(e.Args, " "), strings.TrimSpace(e.Stderr))
 }
 
 func (e *GHError) Unwrap() error {
