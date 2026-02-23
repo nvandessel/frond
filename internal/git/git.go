@@ -5,6 +5,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -72,8 +73,10 @@ func BranchExists(ctx context.Context, name string) (bool, error) {
 	_, err := run(ctx, "rev-parse", "--verify", "refs/heads/"+name)
 	if err != nil {
 		// If git rev-parse --verify fails, the branch does not exist.
-		if gitErr, ok := err.(*GitError); ok {
-			if exitErr, ok2 := gitErr.Err.(*exec.ExitError); ok2 {
+		var gitErr *GitError
+		if errors.As(err, &gitErr) {
+			var exitErr *exec.ExitError
+			if errors.As(gitErr.Err, &exitErr) {
 				if exitErr.ExitCode() == 128 || exitErr.ExitCode() == 1 {
 					return false, nil
 				}
@@ -120,7 +123,8 @@ func Fetch(ctx context.Context) error {
 func Rebase(ctx context.Context, onto, branch string) error {
 	_, err := run(ctx, "rebase", onto, branch)
 	if err != nil {
-		if gitErr, ok := err.(*GitError); ok {
+		var gitErr *GitError
+		if errors.As(err, &gitErr) {
 			if strings.Contains(gitErr.Stderr, "CONFLICT") ||
 				strings.Contains(gitErr.Stderr, "could not apply") {
 				// Abort the in-progress rebase so the repo is left clean.
