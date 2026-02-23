@@ -60,13 +60,7 @@ func initRepo(t *testing.T) (dir string, ctx context.Context) {
 	// Also set the env vars for the test process so run() picks them up.
 	for _, e := range gitEnv {
 		parts := strings.SplitN(e, "=", 2)
-		orig, hadOrig := os.LookupEnv(parts[0])
-		os.Setenv(parts[0], parts[1])
-		if hadOrig {
-			t.Cleanup(func() { os.Setenv(parts[0], orig) })
-		} else {
-			t.Cleanup(func() { os.Unsetenv(parts[0]) })
-		}
+		t.Setenv(parts[0], parts[1])
 	}
 
 	return dir, ctx
