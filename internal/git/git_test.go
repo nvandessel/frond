@@ -285,6 +285,58 @@ func TestRebaseConflict(t *testing.T) {
 	}
 }
 
+func TestPush(t *testing.T) {
+	dir, ctx := initRepo(t)
+
+	// Set up a bare remote.
+	remoteDir := t.TempDir()
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	cmd = exec.Command("git", "remote", "add", "origin", remoteDir)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+
+	// Push should succeed.
+	err := Push(ctx, "main")
+	if err != nil {
+		t.Fatalf("Push() error: %v", err)
+	}
+}
+
+func TestFetch(t *testing.T) {
+	dir, ctx := initRepo(t)
+
+	// Set up a bare remote.
+	remoteDir := t.TempDir()
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	cmd = exec.Command("git", "remote", "add", "origin", remoteDir)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	// Push main so there's something to fetch.
+	cmd = exec.Command("git", "push", "origin", "main")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git push: %s\n%s", err, out)
+	}
+
+	// Fetch should succeed.
+	err := Fetch(ctx)
+	if err != nil {
+		t.Fatalf("Fetch() error: %v", err)
+	}
+}
+
 func TestGitError(t *testing.T) {
 	_, ctx := initRepo(t)
 
