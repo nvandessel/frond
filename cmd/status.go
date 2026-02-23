@@ -1,10 +1,11 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 
 	"github.com/nvandessel/tier/internal/dag"
 	"github.com/nvandessel/tier/internal/gh"
@@ -147,8 +148,8 @@ func outputHuman(trunk string, branches map[string]dag.BranchInfo, prNumbers map
 				entries = append(entries, prEntry{name: name, number: *pr, state: st})
 			}
 		}
-		sort.Slice(entries, func(i, j int) bool {
-			return entries[i].name < entries[j].name
+		slices.SortFunc(entries, func(a, b prEntry) int {
+			return cmp.Compare(a.name, b.name)
 		})
 		for _, e := range entries {
 			fmt.Printf("  #%d %s — %s\n", e.number, e.name, e.state)

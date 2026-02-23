@@ -5,7 +5,7 @@ package dag
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -109,7 +109,7 @@ func DetectCycle(branches map[string]BranchInfo, newName string, newAfter []stri
 	for n := range allNodes {
 		sorted = append(sorted, n)
 	}
-	sort.Strings(sorted)
+	slices.Sort(sorted)
 
 	for _, node := range sorted {
 		if color[node] == white {
@@ -156,7 +156,7 @@ func TopoSort(branches map[string]BranchInfo) ([]string, error) {
 			queue = append(queue, name)
 		}
 	}
-	sort.Strings(queue)
+	slices.Sort(queue)
 
 	var result []string
 	for len(queue) > 0 {
@@ -165,7 +165,7 @@ func TopoSort(branches map[string]BranchInfo) ([]string, error) {
 		result = append(result, node)
 
 		deps := dependents[node]
-		sort.Strings(deps)
+		slices.Sort(deps)
 		for _, dep := range deps {
 			inDegree[dep]--
 			if inDegree[dep] == 0 {
@@ -192,7 +192,7 @@ func ComputeReadiness(branches map[string]BranchInfo) []ReadinessInfo {
 	for name := range branches {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	for _, name := range names {
 		info := branches[name]
@@ -206,7 +206,7 @@ func ComputeReadiness(branches map[string]BranchInfo) []ReadinessInfo {
 		}
 
 		if ri.BlockedBy != nil {
-			sort.Strings(ri.BlockedBy)
+			slices.Sort(ri.BlockedBy)
 		}
 
 		result = append(result, ri)
@@ -234,7 +234,7 @@ func RenderTree(trunk string, branches map[string]BranchInfo, prNumbers map[stri
 
 	// Sort children alphabetically
 	for p := range children {
-		sort.Strings(children[p])
+		slices.Sort(children[p])
 	}
 
 	var sb strings.Builder
@@ -306,7 +306,7 @@ func RenderJSON(trunk string, branches map[string]BranchInfo, prNumbers map[stri
 	for name := range branches {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	var result []JSONBranch
 	for _, name := range names {
