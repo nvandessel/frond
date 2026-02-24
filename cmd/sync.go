@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -41,7 +40,7 @@ func init() {
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	// Step 1: Lock state, defer unlock.
 	unlock, err := state.Lock(ctx)

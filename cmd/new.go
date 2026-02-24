@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -25,7 +24,7 @@ func init() {
 }
 
 func runNew(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	name := args[0]
 
 	if err := validateBranchName(name); err != nil {

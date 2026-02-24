@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/nvandessel/tier/internal/git"
@@ -21,7 +20,7 @@ func init() {
 }
 
 func runUntrack(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	// 1. Lock state, defer unlock
 	unlock, err := state.Lock(ctx)
