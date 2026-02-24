@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -167,6 +168,10 @@ func TestWriteThenRead(t *testing.T) {
 }
 
 func TestLockUnlock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PID-based lock contention detection not supported on Windows")
+	}
+
 	dir := setupGitRepo(t)
 	ctx := context.Background()
 
@@ -391,6 +396,10 @@ func TestWriteCreatesParentDirs(t *testing.T) {
 }
 
 func TestWriteReadOnlyDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not enforce read-only directories on Windows")
+	}
+
 	// Write should fail if the directory is read-only (can't write temp file).
 	tmpDir := t.TempDir()
 	roDir := filepath.Join(tmpDir, "readonly")
@@ -417,6 +426,10 @@ func TestWriteReadOnlyDir(t *testing.T) {
 }
 
 func TestLockDoubleLockFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PID-based lock contention detection not supported on Windows")
+	}
+
 	setupGitRepo(t)
 	ctx := context.Background()
 
