@@ -32,7 +32,12 @@ type syncAction struct {
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Fetch, detect merged branches, clean up dependencies, rebase unblocked branches",
-	RunE:  runSync,
+	Example: `  # Sync all tracked branches
+  tier sync
+
+  # Sync with JSON output
+  tier sync --json`,
+	RunE: runSync,
 }
 
 func init() {

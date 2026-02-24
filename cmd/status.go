@@ -26,7 +26,15 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the dependency graph with readiness indicators",
 	Long:  "Display the branch dependency tree with PR numbers, readiness status, and optionally live PR states from GitHub.",
-	RunE:  runStatus,
+	Example: `  # Show the dependency tree
+  tier status
+
+  # Include live PR states from GitHub
+  tier status --fetch
+
+  # JSON output for scripting
+  tier status --json`,
+	RunE: runStatus,
 }
 
 func init() {
