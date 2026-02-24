@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -77,8 +78,8 @@ func TestReadMissingFile(t *testing.T) {
 	ctx := context.Background()
 
 	s, err := Read(ctx)
-	if err != nil {
-		t.Fatalf("Read() error: %v", err)
+	if !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("Read() error = %v, want ErrNotInitialized", err)
 	}
 	if s != nil {
 		t.Errorf("Read() on missing file returned non-nil state: %+v", s)
