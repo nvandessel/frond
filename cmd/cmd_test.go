@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/pflag"
 )
 
@@ -162,23 +162,23 @@ func resetCobraFlags() {
 	})
 }
 
-// readState reads tier.json from the temp repo's .git directory.
+// readState reads frond.json from the temp repo's .git directory.
 func readState(t *testing.T, repoDir string) *state.State {
 	t.Helper()
 
-	p := filepath.Join(repoDir, ".git", "tier.json")
+	p := filepath.Join(repoDir, ".git", "frond.json")
 	data, err := os.ReadFile(p)
 	if err != nil {
-		t.Fatalf("reading tier.json: %v", err)
+		t.Fatalf("reading frond.json: %v", err)
 	}
 	var s state.State
 	if err := json.Unmarshal(data, &s); err != nil {
-		t.Fatalf("parsing tier.json: %v", err)
+		t.Fatalf("parsing frond.json: %v", err)
 	}
 	return &s
 }
 
-// runTier executes a tier subcommand and returns the error (if any).
+// runTier executes a frond subcommand and returns the error (if any).
 func runTier(t *testing.T, args ...string) error {
 	t.Helper()
 	rootCmd.SetArgs(args)
@@ -190,7 +190,7 @@ func TestNewCreatesAndTracks(t *testing.T) {
 
 	err := runTier(t, "new", "feature-x")
 	if err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Verify git branch was created and checked out.
@@ -204,14 +204,14 @@ func TestNewCreatesAndTracks(t *testing.T) {
 		t.Errorf("current branch = %q, want %q", got, "feature-x")
 	}
 
-	// Verify tier.json has the branch.
+	// Verify frond.json has the branch.
 	s := readState(t, dir)
 	if s.Trunk != "main" {
 		t.Errorf("trunk = %q, want %q", s.Trunk, "main")
 	}
 	b, ok := s.Branches["feature-x"]
 	if !ok {
-		t.Fatal("branch 'feature-x' not in tier.json")
+		t.Fatal("branch 'feature-x' not in frond.json")
 	}
 	if b.Parent != "main" {
 		t.Errorf("parent = %q, want %q", b.Parent, "main")
@@ -224,13 +224,13 @@ func TestNewWithOnFlag(t *testing.T) {
 	// Create a first branch.
 	err := runTier(t, "new", "step-1")
 	if err != nil {
-		t.Fatalf("tier new step-1: %v", err)
+		t.Fatalf("frond new step-1: %v", err)
 	}
 
 	// Create a stacked branch on top.
 	err = runTier(t, "new", "step-2", "--on", "step-1")
 	if err != nil {
-		t.Fatalf("tier new step-2: %v", err)
+		t.Fatalf("frond new step-2: %v", err)
 	}
 
 	s := readState(t, dir)
@@ -259,7 +259,7 @@ func TestNewDuplicateBranchFails(t *testing.T) {
 func TestTrackExistingBranch(t *testing.T) {
 	dir := setupTestEnv(t)
 
-	// Create a git branch manually (not via tier).
+	// Create a git branch manually (not via frond).
 	gitCmd := exec.Command("git", "checkout", "-b", "existing-branch", "main")
 	gitCmd.Dir = dir
 	if out, err := gitCmd.CombinedOutput(); err != nil {
@@ -275,13 +275,13 @@ func TestTrackExistingBranch(t *testing.T) {
 
 	err := runTier(t, "track", "existing-branch", "--on", "main")
 	if err != nil {
-		t.Fatalf("tier track: %v", err)
+		t.Fatalf("frond track: %v", err)
 	}
 
 	s := readState(t, dir)
 	b, ok := s.Branches["existing-branch"]
 	if !ok {
-		t.Fatal("branch 'existing-branch' not in tier.json")
+		t.Fatal("branch 'existing-branch' not in frond.json")
 	}
 	if b.Parent != "main" {
 		t.Errorf("parent = %q, want %q", b.Parent, "main")
@@ -292,7 +292,7 @@ func TestTrackAlreadyTrackedFails(t *testing.T) {
 	setupTestEnv(t)
 
 	if err := runTier(t, "new", "tracked-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	err := runTier(t, "track", "tracked-branch", "--on", "main")
@@ -309,29 +309,29 @@ func TestUntrackRemovesBranch(t *testing.T) {
 
 	// Create two stacked branches.
 	if err := runTier(t, "new", "parent-branch"); err != nil {
-		t.Fatalf("tier new parent-branch: %v", err)
+		t.Fatalf("frond new parent-branch: %v", err)
 	}
 	if err := runTier(t, "new", "child-branch", "--on", "parent-branch"); err != nil {
-		t.Fatalf("tier new child-branch: %v", err)
+		t.Fatalf("frond new child-branch: %v", err)
 	}
 
 	// Untrack the parent.
 	err := runTier(t, "untrack", "parent-branch")
 	if err != nil {
-		t.Fatalf("tier untrack: %v", err)
+		t.Fatalf("frond untrack: %v", err)
 	}
 
 	s := readState(t, dir)
 
 	// Parent should be gone.
 	if _, ok := s.Branches["parent-branch"]; ok {
-		t.Error("parent-branch still in tier.json after untrack")
+		t.Error("parent-branch still in frond.json after untrack")
 	}
 
 	// Child should be reparented to main.
 	child, ok := s.Branches["child-branch"]
 	if !ok {
-		t.Fatal("child-branch missing from tier.json")
+		t.Fatal("child-branch missing from frond.json")
 	}
 	if child.Parent != "main" {
 		t.Errorf("child parent = %q, want %q (reparented to trunk)", child.Parent, "main")
@@ -341,9 +341,9 @@ func TestUntrackRemovesBranch(t *testing.T) {
 func TestUntrackNotTrackedFails(t *testing.T) {
 	setupTestEnv(t)
 
-	// Initialize tier state (via new, then untrack, then try again).
+	// Initialize frond state (via new, then untrack, then try again).
 	if err := runTier(t, "new", "some-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	err := runTier(t, "untrack", "nonexistent")
@@ -359,16 +359,16 @@ func TestStatusShowsTree(t *testing.T) {
 	setupTestEnv(t)
 
 	if err := runTier(t, "new", "feat-a"); err != nil {
-		t.Fatalf("tier new feat-a: %v", err)
+		t.Fatalf("frond new feat-a: %v", err)
 	}
 	if err := runTier(t, "new", "feat-b", "--on", "feat-a"); err != nil {
-		t.Fatalf("tier new feat-b: %v", err)
+		t.Fatalf("frond new feat-b: %v", err)
 	}
 
 	// Status should not error.
 	err := runTier(t, "status")
 	if err != nil {
-		t.Fatalf("tier status: %v", err)
+		t.Fatalf("frond status: %v", err)
 	}
 }
 
@@ -376,12 +376,12 @@ func TestStatusJSON(t *testing.T) {
 	setupTestEnv(t)
 
 	if err := runTier(t, "new", "feat-a"); err != nil {
-		t.Fatalf("tier new feat-a: %v", err)
+		t.Fatalf("frond new feat-a: %v", err)
 	}
 
 	err := runTier(t, "status", "--json")
 	if err != nil {
-		t.Fatalf("tier status --json: %v", err)
+		t.Fatalf("frond status --json: %v", err)
 	}
 }
 
@@ -392,8 +392,8 @@ func TestStatusNoStateFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no state exists")
 	}
-	if !strings.Contains(err.Error(), "no tier state") {
-		t.Errorf("error = %q, want 'no tier state'", err.Error())
+	if !strings.Contains(err.Error(), "no frond state") {
+		t.Errorf("error = %q, want 'no frond state'", err.Error())
 	}
 }
 
@@ -402,12 +402,12 @@ func TestNewCycleDetection(t *testing.T) {
 
 	// Create branch A.
 	if err := runTier(t, "new", "branch-a"); err != nil {
-		t.Fatalf("tier new branch-a: %v", err)
+		t.Fatalf("frond new branch-a: %v", err)
 	}
 
 	// Create branch B that depends on A.
 	if err := runTier(t, "new", "branch-b", "--on", "main", "--after", "branch-a"); err != nil {
-		t.Fatalf("tier new branch-b: %v", err)
+		t.Fatalf("frond new branch-b: %v", err)
 	}
 
 	// Try to create C with --after=branch-b AND on branch-a, but also adding
@@ -457,13 +457,13 @@ func TestNewInheritsParentFromCurrentBranch(t *testing.T) {
 
 	// Create first branch.
 	if err := runTier(t, "new", "base-feature"); err != nil {
-		t.Fatalf("tier new base-feature: %v", err)
+		t.Fatalf("frond new base-feature: %v", err)
 	}
 
 	// We're now on base-feature. Create another without --on.
 	// It should inherit base-feature as parent.
 	if err := runTier(t, "new", "sub-feature"); err != nil {
-		t.Fatalf("tier new sub-feature: %v", err)
+		t.Fatalf("frond new sub-feature: %v", err)
 	}
 
 	s := readState(t, dir)
@@ -478,7 +478,7 @@ func TestPushCreatesNewPR(t *testing.T) {
 
 	// Create a tracked branch with a commit.
 	if err := runTier(t, "new", "pr-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Add a commit so push has something.
@@ -512,7 +512,7 @@ func TestPushCreatesNewPR(t *testing.T) {
 
 	err := runTier(t, "push")
 	if err != nil {
-		t.Fatalf("tier push: %v", err)
+		t.Fatalf("frond push: %v", err)
 	}
 
 	// Verify PR number was saved to state.
@@ -553,7 +553,7 @@ func TestSyncNothingToDo(t *testing.T) {
 
 	// Create a tracked branch.
 	if err := runTier(t, "new", "sync-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Set up a remote so fetch works.
@@ -578,7 +578,7 @@ func TestSyncNothingToDo(t *testing.T) {
 	// Sync should succeed with "already up to date".
 	err := runTier(t, "sync")
 	if err != nil {
-		t.Fatalf("tier sync: %v", err)
+		t.Fatalf("frond sync: %v", err)
 	}
 }
 
@@ -606,7 +606,7 @@ func TestPushUntrackedBranchFails(t *testing.T) {
 
 	// Initialize state by creating one branch.
 	if err := runTier(t, "new", "tracked-one"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Switch to an untracked branch.
@@ -675,7 +675,7 @@ func TestNewWithJSONOutput(t *testing.T) {
 
 	err := runTier(t, "new", "json-branch", "--json")
 	if err != nil {
-		t.Fatalf("tier new --json: %v", err)
+		t.Fatalf("frond new --json: %v", err)
 	}
 }
 
@@ -684,7 +684,7 @@ func TestNewWithAfterDeps(t *testing.T) {
 
 	// Create two branches.
 	if err := runTier(t, "new", "dep-a"); err != nil {
-		t.Fatalf("tier new dep-a: %v", err)
+		t.Fatalf("frond new dep-a: %v", err)
 	}
 	// Go back to main so next new defaults to main.
 	gitCmd := exec.Command("git", "checkout", "main")
@@ -693,7 +693,7 @@ func TestNewWithAfterDeps(t *testing.T) {
 		t.Fatalf("git checkout: %s\n%s", err, out)
 	}
 	if err := runTier(t, "new", "dep-b"); err != nil {
-		t.Fatalf("tier new dep-b: %v", err)
+		t.Fatalf("frond new dep-b: %v", err)
 	}
 
 	// Go back to main.
@@ -705,7 +705,7 @@ func TestNewWithAfterDeps(t *testing.T) {
 
 	// Create a branch with --after deps.
 	if err := runTier(t, "new", "dep-c", "--on", "main", "--after", "dep-a,dep-b"); err != nil {
-		t.Fatalf("tier new dep-c: %v", err)
+		t.Fatalf("frond new dep-c: %v", err)
 	}
 
 	s := readState(t, dir)
@@ -769,7 +769,7 @@ func TestTrackWithJSONOutput(t *testing.T) {
 
 	err := runTier(t, "track", "json-track", "--on", "main", "--json")
 	if err != nil {
-		t.Fatalf("tier track --json: %v", err)
+		t.Fatalf("frond track --json: %v", err)
 	}
 }
 
@@ -801,12 +801,12 @@ func TestUntrackWithJSONOutput(t *testing.T) {
 	setupTestEnv(t)
 
 	if err := runTier(t, "new", "json-untrack"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	err := runTier(t, "untrack", "json-untrack", "--json")
 	if err != nil {
-		t.Fatalf("tier untrack --json: %v", err)
+		t.Fatalf("frond untrack --json: %v", err)
 	}
 }
 
@@ -815,13 +815,13 @@ func TestUntrackCurrentBranch(t *testing.T) {
 
 	// Create and stay on the branch.
 	if err := runTier(t, "new", "current-br"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Untrack without specifying the branch name (should use current).
 	err := runTier(t, "untrack")
 	if err != nil {
-		t.Fatalf("tier untrack (current): %v", err)
+		t.Fatalf("frond untrack (current): %v", err)
 	}
 
 	s := readState(t, dir)
@@ -835,10 +835,10 @@ func TestUntrackWithDepsAndChildren(t *testing.T) {
 
 	// Create parent -> child chain with deps.
 	if err := runTier(t, "new", "mid-branch"); err != nil {
-		t.Fatalf("tier new mid-branch: %v", err)
+		t.Fatalf("frond new mid-branch: %v", err)
 	}
 	if err := runTier(t, "new", "child-a", "--on", "mid-branch"); err != nil {
-		t.Fatalf("tier new child-a: %v", err)
+		t.Fatalf("frond new child-a: %v", err)
 	}
 	// Go back to main, create another that depends on mid-branch.
 	gitCmd := exec.Command("git", "checkout", "main")
@@ -847,13 +847,13 @@ func TestUntrackWithDepsAndChildren(t *testing.T) {
 		t.Fatalf("git checkout: %s\n%s", err, out)
 	}
 	if err := runTier(t, "new", "dep-on-mid", "--on", "main", "--after", "mid-branch"); err != nil {
-		t.Fatalf("tier new dep-on-mid: %v", err)
+		t.Fatalf("frond new dep-on-mid: %v", err)
 	}
 
 	// Untrack mid-branch -> child-a should be reparented to main, dep-on-mid unblocked.
 	err := runTier(t, "untrack", "mid-branch")
 	if err != nil {
-		t.Fatalf("tier untrack mid-branch: %v", err)
+		t.Fatalf("frond untrack mid-branch: %v", err)
 	}
 
 	s := readState(t, dir)
@@ -875,21 +875,21 @@ func TestUntrackWithDepsAndChildren(t *testing.T) {
 func TestCompletionBash(t *testing.T) {
 	err := runTier(t, "completion", "bash")
 	if err != nil {
-		t.Fatalf("tier completion bash: %v", err)
+		t.Fatalf("frond completion bash: %v", err)
 	}
 }
 
 func TestCompletionZsh(t *testing.T) {
 	err := runTier(t, "completion", "zsh")
 	if err != nil {
-		t.Fatalf("tier completion zsh: %v", err)
+		t.Fatalf("frond completion zsh: %v", err)
 	}
 }
 
 func TestCompletionFish(t *testing.T) {
 	err := runTier(t, "completion", "fish")
 	if err != nil {
-		t.Fatalf("tier completion fish: %v", err)
+		t.Fatalf("frond completion fish: %v", err)
 	}
 }
 
@@ -905,7 +905,7 @@ func TestPushExistingPRUpdates(t *testing.T) {
 
 	// Create a tracked branch with a commit.
 	if err := runTier(t, "new", "update-pr-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
@@ -955,7 +955,7 @@ func TestPushWithTitleAndDraft(t *testing.T) {
 	dir := setupTestEnv(t)
 
 	if err := runTier(t, "new", "draft-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
@@ -983,7 +983,7 @@ func TestPushWithTitleAndDraft(t *testing.T) {
 
 	err := runTier(t, "push", "-t", "My Custom Title", "--draft")
 	if err != nil {
-		t.Fatalf("tier push with title and draft: %v", err)
+		t.Fatalf("frond push with title and draft: %v", err)
 	}
 }
 
@@ -991,7 +991,7 @@ func TestPushWithJSONOutput(t *testing.T) {
 	dir := setupTestEnv(t)
 
 	if err := runTier(t, "new", "json-push"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
@@ -1019,7 +1019,7 @@ func TestPushWithJSONOutput(t *testing.T) {
 
 	err := runTier(t, "push", "--json")
 	if err != nil {
-		t.Fatalf("tier push --json: %v", err)
+		t.Fatalf("frond push --json: %v", err)
 	}
 }
 
@@ -1028,10 +1028,10 @@ func TestSyncNoBranches(t *testing.T) {
 
 	// Create a branch and immediately untrack it so state exists but has no branches.
 	if err := runTier(t, "new", "temp-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 	if err := runTier(t, "untrack", "temp-branch"); err != nil {
-		t.Fatalf("tier untrack: %v", err)
+		t.Fatalf("frond untrack: %v", err)
 	}
 
 	// Set up remote.
@@ -1055,7 +1055,7 @@ func TestSyncNoBranches(t *testing.T) {
 	// Sync with no branches should say "nothing to sync".
 	err := runTier(t, "sync")
 	if err != nil {
-		t.Fatalf("tier sync (no branches): %v", err)
+		t.Fatalf("frond sync (no branches): %v", err)
 	}
 }
 
@@ -1063,10 +1063,10 @@ func TestSyncNoBranchesJSON(t *testing.T) {
 	dir := setupTestEnv(t)
 
 	if err := runTier(t, "new", "temp-branch"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 	if err := runTier(t, "untrack", "temp-branch"); err != nil {
-		t.Fatalf("tier untrack: %v", err)
+		t.Fatalf("frond untrack: %v", err)
 	}
 
 	remoteDir := t.TempDir()
@@ -1088,7 +1088,7 @@ func TestSyncNoBranchesJSON(t *testing.T) {
 
 	err := runTier(t, "sync", "--json")
 	if err != nil {
-		t.Fatalf("tier sync --json (no branches): %v", err)
+		t.Fatalf("frond sync --json (no branches): %v", err)
 	}
 }
 
@@ -1097,7 +1097,7 @@ func TestSyncRebasesTrackedBranch(t *testing.T) {
 
 	// Create tracked branch.
 	if err := runTier(t, "new", "rebase-me"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Add a commit on the feature branch.
@@ -1140,7 +1140,7 @@ func TestSyncRebasesTrackedBranch(t *testing.T) {
 	// Sync should rebase rebase-me onto main.
 	err := runTier(t, "sync")
 	if err != nil {
-		t.Fatalf("tier sync: %v", err)
+		t.Fatalf("frond sync: %v", err)
 	}
 }
 
@@ -1148,7 +1148,7 @@ func TestSyncWithJSONOutput(t *testing.T) {
 	dir := setupTestEnv(t)
 
 	if err := runTier(t, "new", "sync-json"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	remoteDir := t.TempDir()
@@ -1170,7 +1170,7 @@ func TestSyncWithJSONOutput(t *testing.T) {
 
 	err := runTier(t, "sync", "--json")
 	if err != nil {
-		t.Fatalf("tier sync --json: %v", err)
+		t.Fatalf("frond sync --json: %v", err)
 	}
 }
 
@@ -1179,7 +1179,7 @@ func TestStatusWithPRStates(t *testing.T) {
 
 	// Create a tracked branch and manually set a PR number.
 	if err := runTier(t, "new", "pr-status"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Manually write a PR number into state.
@@ -1192,14 +1192,14 @@ func TestStatusWithPRStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".git", "tier.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".git", "frond.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Status with --fetch should exercise fetchPRStates and outputHuman with prStates.
 	err = runTier(t, "status", "--fetch")
 	if err != nil {
-		t.Fatalf("tier status --fetch: %v", err)
+		t.Fatalf("frond status --fetch: %v", err)
 	}
 }
 
@@ -1207,7 +1207,7 @@ func TestStatusFetchJSON(t *testing.T) {
 	dir := setupTestEnv(t)
 
 	if err := runTier(t, "new", "pr-json-status"); err != nil {
-		t.Fatalf("tier new: %v", err)
+		t.Fatalf("frond new: %v", err)
 	}
 
 	// Manually set a PR number.
@@ -1220,14 +1220,14 @@ func TestStatusFetchJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".git", "tier.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".git", "frond.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Status --fetch --json should exercise outputJSON with prStates.
 	err = runTier(t, "status", "--fetch", "--json")
 	if err != nil {
-		t.Fatalf("tier status --fetch --json: %v", err)
+		t.Fatalf("frond status --fetch --json: %v", err)
 	}
 }
 
@@ -1236,7 +1236,7 @@ func TestPushWithUnmetDeps(t *testing.T) {
 
 	// Create dep and dependent branches.
 	if err := runTier(t, "new", "dep-branch"); err != nil {
-		t.Fatalf("tier new dep-branch: %v", err)
+		t.Fatalf("frond new dep-branch: %v", err)
 	}
 
 	gitCmd := exec.Command("git", "checkout", "main")
@@ -1246,7 +1246,7 @@ func TestPushWithUnmetDeps(t *testing.T) {
 	}
 
 	if err := runTier(t, "new", "with-deps", "--on", "main", "--after", "dep-branch"); err != nil {
-		t.Fatalf("tier new with-deps: %v", err)
+		t.Fatalf("frond new with-deps: %v", err)
 	}
 
 	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work")
@@ -1276,7 +1276,7 @@ func TestPushWithUnmetDeps(t *testing.T) {
 	// Push should succeed but warn about unmet deps.
 	err := runTier(t, "push")
 	if err != nil {
-		t.Fatalf("tier push (unmet deps): %v", err)
+		t.Fatalf("frond push (unmet deps): %v", err)
 	}
 }
 
@@ -1285,7 +1285,7 @@ func TestSyncBlockedBranch(t *testing.T) {
 
 	// Create two branches: blocker and blocked.
 	if err := runTier(t, "new", "blocker"); err != nil {
-		t.Fatalf("tier new blocker: %v", err)
+		t.Fatalf("frond new blocker: %v", err)
 	}
 	gitCmd := exec.Command("git", "checkout", "main")
 	gitCmd.Dir = dir
@@ -1293,7 +1293,7 @@ func TestSyncBlockedBranch(t *testing.T) {
 		t.Fatalf("git checkout: %s\n%s", err, out)
 	}
 	if err := runTier(t, "new", "blocked-br", "--on", "main", "--after", "blocker"); err != nil {
-		t.Fatalf("tier new blocked-br: %v", err)
+		t.Fatalf("frond new blocked-br: %v", err)
 	}
 
 	// Set up remote.
@@ -1317,7 +1317,7 @@ func TestSyncBlockedBranch(t *testing.T) {
 	// Sync should see blocked-br as blocked.
 	err := runTier(t, "sync")
 	if err != nil {
-		t.Fatalf("tier sync (blocked): %v", err)
+		t.Fatalf("frond sync (blocked): %v", err)
 	}
 }
 

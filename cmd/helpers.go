@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nvandessel/tier/internal/dag"
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/dag"
+	"github.com/nvandessel/frond/internal/state"
 )
 
 // validateBranchName checks that a branch name is safe to use with git commands.
@@ -33,7 +33,7 @@ func validateBranchName(name string) error {
 func validateAfterDeps(branches map[string]state.Branch, name string, after []string) error {
 	for _, dep := range after {
 		if _, tracked := branches[dep]; !tracked {
-			return fmt.Errorf("'%s' is not tracked. Track it first with 'tier track'", dep)
+			return fmt.Errorf("'%s' is not tracked. Track it first with 'frond track'", dep)
 		}
 	}
 	dagBranches := stateToDag(branches)

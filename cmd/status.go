@@ -7,9 +7,9 @@ import (
 	"os"
 	"slices"
 
-	"github.com/nvandessel/tier/internal/dag"
-	"github.com/nvandessel/tier/internal/gh"
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/dag"
+	"github.com/nvandessel/frond/internal/gh"
+	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -27,13 +27,13 @@ var statusCmd = &cobra.Command{
 	Short: "Show the dependency graph with readiness indicators",
 	Long:  "Display the branch dependency tree with PR numbers, readiness status, and optionally live PR states from GitHub.",
 	Example: `  # Show the dependency tree
-  tier status
+  frond status
 
   # Include live PR states from GitHub
-  tier status --fetch
+  frond status --fetch
 
   # JSON output for scripting
-  tier status --json`,
+  frond status --json`,
 	RunE: runStatus,
 }
 

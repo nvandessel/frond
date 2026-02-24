@@ -30,12 +30,12 @@ golangci-lint run     # Lint
 ## Project Structure
 
 ```
-tier/
+frond/
 ├── main.go                 # Entry point
 ├── cmd/                    # Cobra commands (new, push, sync, status, track, untrack)
 │   └── root.go             # Root command, --json global flag
 └── internal/
-    ├── state/              # tier.json types, read/write, lockfile
+    ├── state/              # frond.json types, read/write, lockfile
     ├── git/                # Thin git CLI wrapper
     ├── gh/                 # Thin gh CLI wrapper
     └── dag/                # Cycle detection, topo sort, readiness, tree rendering

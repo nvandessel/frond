@@ -68,7 +68,7 @@ func TestPath(t *testing.T) {
 		t.Fatalf("Path() error: %v", err)
 	}
 
-	want := filepath.Join(dir, ".git", "tier.json")
+	want := filepath.Join(dir, ".git", "frond.json")
 	if p != want {
 		t.Errorf("Path() = %q, want %q", p, want)
 	}
@@ -91,7 +91,7 @@ func TestReadMalformedJSON(t *testing.T) {
 	dir := setupGitRepo(t)
 	ctx := context.Background()
 
-	// Write garbage to tier.json.
+	// Write garbage to frond.json.
 	p := filepath.Join(dir, ".git", stateFile)
 	if err := os.WriteFile(p, []byte("{invalid json"), 0o644); err != nil {
 		t.Fatalf("writing malformed file: %v", err)
@@ -264,7 +264,7 @@ func TestReadOrInit(t *testing.T) {
 	// File should now exist on disk.
 	p, _ := Path(ctx)
 	if _, err := os.Stat(p); err != nil {
-		t.Fatalf("tier.json does not exist after ReadOrInit(): %v", err)
+		t.Fatalf("frond.json does not exist after ReadOrInit(): %v", err)
 	}
 
 	// Calling ReadOrInit again should return the same state (not re-create).

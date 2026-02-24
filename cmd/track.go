@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nvandessel/tier/internal/git"
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/git"
+	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -13,10 +13,10 @@ var trackCmd = &cobra.Command{
 	Use:   "track <branch>",
 	Short: "Retroactively track an existing branch",
 	Example: `  # Track an existing branch with its parent
-  tier track my-feature --on main
+  frond track my-feature --on main
 
   # Track with a dependency
-  tier track step-2 --on step-1 --after step-1`,
+  frond track step-2 --on step-1 --after step-1`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTrack,
 }
@@ -75,7 +75,7 @@ func runTrack(cmd *cobra.Command, args []string) error {
 			if !onExists {
 				return fmt.Errorf("branch '%s' does not exist", onFlag)
 			}
-			return fmt.Errorf("'%s' is not tracked. Track it first with 'tier track'", onFlag)
+			return fmt.Errorf("'%s' is not tracked. Track it first with 'frond track'", onFlag)
 		}
 	}
 	parent := onFlag

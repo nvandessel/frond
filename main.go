@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/nvandessel/tier/cmd"
+	"github.com/nvandessel/frond/cmd"
 )
 
 func main() {

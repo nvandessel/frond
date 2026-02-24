@@ -1,4 +1,4 @@
-module github.com/nvandessel/tier
+module github.com/nvandessel/frond
 
 go 1.25.7
 

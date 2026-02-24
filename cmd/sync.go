@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nvandessel/tier/internal/dag"
-	"github.com/nvandessel/tier/internal/gh"
-	"github.com/nvandessel/tier/internal/git"
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/dag"
+	"github.com/nvandessel/frond/internal/gh"
+	"github.com/nvandessel/frond/internal/git"
+	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -33,10 +33,10 @@ var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Fetch, detect merged branches, clean up dependencies, rebase unblocked branches",
 	Example: `  # Sync all tracked branches
-  tier sync
+  frond sync
 
   # Sync with JSON output
-  tier sync --json`,
+  frond sync --json`,
 	RunE: runSync,
 }
 
@@ -244,7 +244,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// If there was a conflict, print conflict message and exit with code 2.
 	if conflictBranch != "" {
 		if !jsonOut {
-			fmt.Fprintf(os.Stderr, "conflict: %s \u2014 resolve and run 'tier sync' again\n", conflictBranch)
+			fmt.Fprintf(os.Stderr, "conflict: %s \u2014 resolve and run 'frond sync' again\n", conflictBranch)
 		}
 		return &ExitError{Code: 2}
 	}
