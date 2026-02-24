@@ -105,10 +105,10 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 		if unblocked == nil {
 			unblocked = []string{}
 		}
-		printJSON(map[string]any{
-			"name":       name,
-			"reparented": reparented,
-			"unblocked":  unblocked,
+		printJSON(untrackResult{
+			Name:       name,
+			Reparented: reparented,
+			Unblocked:  unblocked,
 		})
 	} else {
 		fmt.Printf("Untracked branch '%s'\n", name)

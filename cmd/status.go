@@ -107,18 +107,12 @@ func outputJSON(trunk string, branches map[string]dag.BranchInfo, prNumbers map[
 				PRState:    prStates[jb.Name],
 			}
 		}
-		printJSON(struct {
-			Trunk    string         `json:"trunk"`
-			Branches []statusBranch `json:"branches"`
-		}{
+		printJSON(statusFetchResult{
 			Trunk:    trunk,
 			Branches: wrapped,
 		})
 	} else {
-		printJSON(struct {
-			Trunk    string           `json:"trunk"`
-			Branches []dag.JSONBranch `json:"branches"`
-		}{
+		printJSON(statusJSONResult{
 			Trunk:    trunk,
 			Branches: jsonBranches,
 		})

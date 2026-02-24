@@ -113,10 +113,10 @@ func runTrack(cmd *cobra.Command, args []string) error {
 
 	// 9. Output
 	if jsonOut {
-		printJSON(map[string]any{
-			"name":   name,
-			"parent": parent,
-			"after":  after,
+		printJSON(trackResult{
+			Name:   name,
+			Parent: parent,
+			After:  after,
 		})
 	} else {
 		fmt.Printf("Tracking branch '%s' (parent: %s)\n", name, parent)

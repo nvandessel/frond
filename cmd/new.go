@@ -109,10 +109,10 @@ func runNew(cmd *cobra.Command, args []string) error {
 
 	// 9. Output
 	if jsonOut {
-		printJSON(map[string]any{
-			"name":   name,
-			"parent": parent,
-			"after":  after,
+		printJSON(newResult{
+			Name:   name,
+			Parent: parent,
+			After:  after,
 		})
 	} else {
 		fmt.Printf("Created and checked out branch '%s' (parent: %s)\n", name, parent)

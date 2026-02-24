@@ -142,10 +142,10 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	// 10. Output.
 	if jsonOut {
-		printJSON(map[string]any{
-			"branch":  branch,
-			"pr":      prNumber,
-			"created": created,
+		printJSON(pushResult{
+			Branch:  branch,
+			PR:      prNumber,
+			Created: created,
 		})
 	} else {
 		action := "updated"
