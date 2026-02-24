@@ -73,12 +73,21 @@ func runNew(cmd *cobra.Command, args []string) error {
 		after = strings.Split(afterFlag, ",")
 	}
 
-	// 5. Validate --after deps and check for cycles
+	// 5. Validate parent branch exists in git
+	parentExists, err := git.BranchExists(ctx, parent)
+	if err != nil {
+		return fmt.Errorf("checking parent branch: %w", err)
+	}
+	if !parentExists {
+		return fmt.Errorf("parent branch '%s' does not exist", parent)
+	}
+
+	// 6. Validate --after deps and check for cycles
 	if err := validateAfterDeps(s.Branches, name, after); err != nil {
 		return err
 	}
 
-	// 6. git.CreateBranch (also checks it out)
+	// 7. git.CreateBranch (also checks it out)
 	if err := git.CreateBranch(ctx, name, parent); err != nil {
 		return fmt.Errorf("creating branch: %w", err)
 	}
