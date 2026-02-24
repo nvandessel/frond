@@ -1,6 +1,6 @@
-// Package state manages tier.json — the single state file that tracks all
-// branch metadata for the tier CLI. The state file lives at
-// <git-common-dir>/tier.json so it is shared across worktrees.
+// Package state manages frond.json — the single state file that tracks all
+// branch metadata for the frond CLI. The state file lives at
+// <git-common-dir>/frond.json so it is shared across worktrees.
 package state
 
 import (
@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nvandessel/tier/internal/git"
+	"github.com/nvandessel/frond/internal/git"
 )
 
 // Branch holds metadata for a single tracked branch.
@@ -22,20 +22,20 @@ type Branch struct {
 	PR     *int     `json:"pr"`
 }
 
-// State is the top-level structure persisted to tier.json.
+// State is the top-level structure persisted to frond.json.
 type State struct {
 	Version  int               `json:"version"`
 	Trunk    string            `json:"trunk"`
 	Branches map[string]Branch `json:"branches"`
 }
 
-// ErrNotInitialized is returned by Read when tier.json does not exist.
-var ErrNotInitialized = errors.New("no tier state found; run 'tier new' or 'tier track' first")
+// ErrNotInitialized is returned by Read when frond.json does not exist.
+var ErrNotInitialized = errors.New("no frond state found; run 'frond new' or 'frond track' first")
 
 const (
-	stateFile = "tier.json"
-	lockFile  = "tier.json.lock"
-	tmpFile   = "tier.json.tmp"
+	stateFile = "frond.json"
+	lockFile  = "frond.json.lock"
+	tmpFile   = "frond.json.tmp"
 
 	lockStaleDuration = 5 * time.Minute
 	stateVersion      = 1
@@ -54,7 +54,7 @@ var gitCommonDir = func(ctx context.Context) (string, error) {
 	return abs, nil
 }
 
-// Path returns the absolute path to tier.json.
+// Path returns the absolute path to frond.json.
 func Path(ctx context.Context) (string, error) {
 	dir, err := gitCommonDir(ctx)
 	if err != nil {
@@ -63,7 +63,7 @@ func Path(ctx context.Context) (string, error) {
 	return filepath.Join(dir, stateFile), nil
 }
 
-// Read parses tier.json and returns the state. If the file does not exist,
+// Read parses frond.json and returns the state. If the file does not exist,
 // it returns ErrNotInitialized.
 func Read(ctx context.Context) (*State, error) {
 	p, err := Path(ctx)
@@ -86,7 +86,7 @@ func Read(ctx context.Context) (*State, error) {
 	return &s, nil
 }
 
-// Write atomically persists state to tier.json. It writes to a temporary
+// Write atomically persists state to frond.json. It writes to a temporary
 // file first, then renames it into place so readers never see partial data.
 func Write(ctx context.Context, s *State) error {
 	p, err := Path(ctx)
@@ -125,7 +125,7 @@ func Write(ctx context.Context, s *State) error {
 	return nil
 }
 
-// Lock acquires an exclusive lockfile (tier.json.lock) to serialise
+// Lock acquires an exclusive lockfile (frond.json.lock) to serialise
 // concurrent access from multiple worktrees. It returns an unlock function
 // that removes the lockfile. If a lockfile older than 5 minutes exists it
 // is treated as stale, removed, and the lock is retried once.
@@ -215,7 +215,7 @@ func rejectSymlink(path string) error {
 	return nil
 }
 
-// ReadOrInit reads existing state from tier.json. If no state file exists,
+// ReadOrInit reads existing state from frond.json. If no state file exists,
 // it creates an initial state with auto-detected trunk and writes it out.
 func ReadOrInit(ctx context.Context) (*State, error) {
 	s, err := Read(ctx)

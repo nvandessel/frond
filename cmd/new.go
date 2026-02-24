@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nvandessel/tier/internal/git"
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/git"
+	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -13,13 +13,13 @@ var newCmd = &cobra.Command{
 	Use:   "new <name>",
 	Short: "Create a new tracked branch and check it out",
 	Example: `  # Create a feature branch (parent defaults to current branch or trunk)
-  tier new my-feature
+  frond new my-feature
 
   # Stack on top of a specific branch
-  tier new step-2 --on step-1
+  frond new step-2 --on step-1
 
   # Create with a dependency (must merge after prereq)
-  tier new my-feature --on main --after prereq-branch`,
+  frond new my-feature --on main --after prereq-branch`,
 	Args: cobra.ExactArgs(1),
 	RunE: runNew,
 }
@@ -57,7 +57,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checking branch existence: %w", err)
 	}
 	if exists {
-		return fmt.Errorf("branch '%s' already exists. Use 'tier track' to add it", name)
+		return fmt.Errorf("branch '%s' already exists. Use 'frond track' to add it", name)
 	}
 
 	// 3. Resolve parent: --on flag -> current branch if tracked -> trunk

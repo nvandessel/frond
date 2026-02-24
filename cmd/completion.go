@@ -9,33 +9,33 @@ import (
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish]",
 	Short: "Generate shell completion scripts",
-	Long: `Generate shell completion scripts for tier.
+	Long: `Generate shell completion scripts for frond.
 
 To load completions:
 
   bash:
-    source <(tier completion bash)
+    source <(frond completion bash)
 
     # To install permanently (Linux):
-    tier completion bash > /etc/bash_completion.d/tier
+    frond completion bash > /etc/bash_completion.d/frond
 
     # To install permanently (macOS with Homebrew):
-    tier completion bash > $(brew --prefix)/etc/bash_completion.d/tier
+    frond completion bash > $(brew --prefix)/etc/bash_completion.d/frond
 
   zsh:
     # If shell completion is not already enabled, add this to ~/.zshrc:
     autoload -U compinit; compinit
 
-    source <(tier completion zsh)
+    source <(frond completion zsh)
 
     # To install permanently:
-    tier completion zsh > "${fpath[1]}/_tier"
+    frond completion zsh > "${fpath[1]}/_frond"
 
   fish:
-    tier completion fish | source
+    frond completion fish | source
 
     # To install permanently:
-    tier completion fish > ~/.config/fish/completions/tier.fish
+    frond completion fish > ~/.config/fish/completions/frond.fish
 `,
 	DisableFlagsInUseLine: true,
 	ValidArgs:             []string{"bash", "zsh", "fish"},

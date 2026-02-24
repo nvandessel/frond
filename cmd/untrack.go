@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/nvandessel/tier/internal/git"
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/git"
+	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -12,10 +12,10 @@ var untrackCmd = &cobra.Command{
 	Use:   "untrack [<branch>]",
 	Short: "Remove a branch from tracking",
 	Example: `  # Untrack the current branch
-  tier untrack
+  frond untrack
 
   # Untrack a specific branch
-  tier untrack my-feature`,
+  frond untrack my-feature`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runUntrack,
 }

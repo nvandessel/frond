@@ -2,9 +2,9 @@ version: 2
 
 builds:
   - main: .
-    binary: tier
+    binary: frond
     ldflags:
-      - -s -w -X github.com/nvandessel/tier/cmd.version={{.Version}}
+      - -s -w -X github.com/nvandessel/frond/cmd.version={{.Version}}
     goos:
       - linux
       - darwin
@@ -26,14 +26,14 @@ checksum:
 brews:
   - repository:
       owner: nvandessel
-      name: homebrew-tier
-    homepage: https://github.com/nvandessel/tier
+      name: homebrew-frond
+    homepage: https://github.com/nvandessel/frond
     description: Agent-first CLI for managing stacked PRs
     license: Apache-2.0
     install: |
-      bin.install "tier"
+      bin.install "frond"
     test: |
-      system "#{bin}/tier", "--version"
+      system "#{bin}/frond", "--version"
 
 changelog:
   sort: asc

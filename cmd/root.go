@@ -13,7 +13,7 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "tier",
+	Use:           "frond",
 	Short:         "Agent-first CLI for managing stacked PRs with DAG dependencies",
 	Version:       version,
 	SilenceUsage:  true,

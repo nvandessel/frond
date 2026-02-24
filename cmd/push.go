@@ -6,9 +6,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nvandessel/tier/internal/gh"
-	"github.com/nvandessel/tier/internal/git"
-	"github.com/nvandessel/tier/internal/state"
+	"github.com/nvandessel/frond/internal/gh"
+	"github.com/nvandessel/frond/internal/git"
+	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -16,13 +16,13 @@ var pushCmd = &cobra.Command{
 	Use:   "push",
 	Short: "Push current branch and create/update its GitHub PR",
 	Example: `  # Push and create/update PR with auto-generated title
-  tier push
+  frond push
 
   # Push with a custom title and as draft
-  tier push -t "Add user auth" --draft
+  frond push -t "Add user auth" --draft
 
   # Push with JSON output for scripting
-  tier push --json`,
+  frond push --json`,
 	RunE: runPush,
 }
 

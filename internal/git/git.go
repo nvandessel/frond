@@ -55,7 +55,7 @@ func run(ctx context.Context, args ...string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-// CommonDir returns the path to the git common directory (where tier.json lives).
+// CommonDir returns the path to the git common directory (where frond.json lives).
 // It runs: git rev-parse --git-common-dir
 func CommonDir(ctx context.Context) (string, error) {
 	return run(ctx, "rev-parse", "--git-common-dir")
