@@ -74,15 +74,23 @@ func TestCommonDir(t *testing.T) {
 		t.Fatalf("CommonDir() error: %v", err)
 	}
 
-	// CommonDir should return a path that resolves to <repo>/.git
+	// CommonDir should return a path that resolves to <repo>/.git.
+	// Resolve symlinks on both sides because macOS /var -> /private/var.
 	want := filepath.Join(dir, ".git")
-	// Resolve both to absolute paths for comparison (CommonDir might return relative).
 	absGot, err := filepath.Abs(got)
 	if err != nil {
 		t.Fatalf("filepath.Abs(%q): %v", got, err)
 	}
+	absGot, err = filepath.EvalSymlinks(absGot)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q): %v", absGot, err)
+	}
+	want, err = filepath.EvalSymlinks(want)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q): %v", want, err)
+	}
 	if absGot != want {
-		t.Errorf("CommonDir() = %q (abs: %q), want %q", got, absGot, want)
+		t.Errorf("CommonDir() = %q (resolved: %q), want %q", got, absGot, want)
 	}
 }
 
