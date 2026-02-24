@@ -12,8 +12,16 @@ import (
 var newCmd = &cobra.Command{
 	Use:   "new <name>",
 	Short: "Create a new tracked branch and check it out",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runNew,
+	Example: `  # Create a feature branch (parent defaults to current branch or trunk)
+  tier new my-feature
+
+  # Stack on top of a specific branch
+  tier new step-2 --on step-1
+
+  # Create with a dependency (must merge after prereq)
+  tier new my-feature --on main --after prereq-branch`,
+	Args: cobra.ExactArgs(1),
+	RunE: runNew,
 }
 
 func init() {

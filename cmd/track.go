@@ -12,8 +12,13 @@ import (
 var trackCmd = &cobra.Command{
 	Use:   "track <branch>",
 	Short: "Retroactively track an existing branch",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTrack,
+	Example: `  # Track an existing branch with its parent
+  tier track my-feature --on main
+
+  # Track with a dependency
+  tier track step-2 --on step-1 --after step-1`,
+	Args: cobra.ExactArgs(1),
+	RunE: runTrack,
 }
 
 func init() {

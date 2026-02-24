@@ -15,7 +15,15 @@ import (
 var pushCmd = &cobra.Command{
 	Use:   "push",
 	Short: "Push current branch and create/update its GitHub PR",
-	RunE:  runPush,
+	Example: `  # Push and create/update PR with auto-generated title
+  tier push
+
+  # Push with a custom title and as draft
+  tier push -t "Add user auth" --draft
+
+  # Push with JSON output for scripting
+  tier push --json`,
+	RunE: runPush,
 }
 
 func init() {

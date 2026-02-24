@@ -11,8 +11,13 @@ import (
 var untrackCmd = &cobra.Command{
 	Use:   "untrack [<branch>]",
 	Short: "Remove a branch from tracking",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runUntrack,
+	Example: `  # Untrack the current branch
+  tier untrack
+
+  # Untrack a specific branch
+  tier untrack my-feature`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runUntrack,
 }
 
 func init() {
