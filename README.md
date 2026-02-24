@@ -11,11 +11,27 @@ Single binary. Zero config.
 
 ## Install
 
+**Homebrew** (macOS/Linux):
+```bash
+brew install nvandessel/tier/tier
+```
+
+**Binary download**: grab the latest from [GitHub Releases](https://github.com/nvandessel/tier/releases/latest).
+
+**From source**:
 ```bash
 go install github.com/nvandessel/tier@latest
 ```
 
 Requires [git](https://git-scm.com/) and [gh](https://cli.github.com/) (authenticated).
+
+### Shell completions
+
+```bash
+tier completion bash > /etc/bash_completion.d/tier      # bash (Linux)
+tier completion zsh > "${fpath[1]}/_tier"                # zsh
+tier completion fish > ~/.config/fish/completions/tier.fish  # fish
+```
 
 ## Usage
 
