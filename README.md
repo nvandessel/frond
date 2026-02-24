@@ -1,4 +1,4 @@
-# frond
+# frond 🌴
 
 [![CI](https://github.com/nvandessel/frond/actions/workflows/ci.yml/badge.svg)](https://github.com/nvandessel/frond/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/nvandessel/frond/branch/main/graph/badge.svg)](https://codecov.io/gh/nvandessel/frond)
