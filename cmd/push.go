@@ -141,18 +141,17 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	// 10. Output.
 	if jsonOut {
-		printJSON(pushResult{
+		return printJSON(pushResult{
 			Branch:  branch,
 			PR:      prNumber,
 			Created: created,
 		})
-	} else {
-		action := "updated"
-		if created {
-			action = "created"
-		}
-		fmt.Printf("Pushed %s. PR #%d [%s]\n", branch, prNumber, action)
 	}
+	action := "updated"
+	if created {
+		action = "created"
+	}
+	fmt.Printf("Pushed %s. PR #%d [%s]\n", branch, prNumber, action)
 
 	return nil
 }
