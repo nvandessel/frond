@@ -63,17 +63,25 @@ func Available() error {
 	return nil
 }
 
+// PRCreateOpts configures the gh pr create command.
+type PRCreateOpts struct {
+	Base  string // Target branch (--base)
+	Head  string // Source branch (--head)
+	Title string // PR title (-t)
+	Body  string // PR body (-b)
+	Draft bool   // Create as draft PR (--draft)
+}
+
 // PRCreate creates a pull request and returns the new PR number.
-// When draft is true, the --draft flag is included.
-func PRCreate(ctx context.Context, base, head, title, body string, draft bool) (int, error) {
+func PRCreate(ctx context.Context, opts PRCreateOpts) (int, error) {
 	args := []string{
 		"pr", "create",
-		"--base", base,
-		"--head", head,
-		"-t", title,
-		"-b", body,
+		"--base", opts.Base,
+		"--head", opts.Head,
+		"-t", opts.Title,
+		"-b", opts.Body,
 	}
-	if draft {
+	if opts.Draft {
 		args = append(args, "--draft")
 	}
 	args = append(args, "--json", "number")

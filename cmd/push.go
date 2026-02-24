@@ -94,7 +94,13 @@ func runPush(cmd *cobra.Command, args []string) error {
 		body, _ := cmd.Flags().GetString("body")
 		draft, _ := cmd.Flags().GetBool("draft")
 
-		prNumber, err = gh.PRCreate(ctx, br.Parent, branch, title, body, draft)
+		prNumber, err = gh.PRCreate(ctx, gh.PRCreateOpts{
+			Base:  br.Parent,
+			Head:  branch,
+			Title: title,
+			Body:  body,
+			Draft: draft,
+		})
 		if err != nil {
 			return err
 		}
