@@ -10,9 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nvandessel/tier/internal/git"
@@ -201,22 +198,6 @@ func tryLock(path string) (bool, error) {
 }
 
 func noop() {}
-
-// lockPIDAlive reads the PID from a lockfile and checks if that process
-// is still running. Returns false if the PID cannot be read or the process
-// is not alive.
-func lockPIDAlive(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 0 {
-		return false
-	}
-	// Signal 0 checks process existence without sending a real signal.
-	return syscall.Kill(pid, 0) == nil
-}
 
 // rejectSymlink returns an error if the given path is a symlink.
 // This is a defense-in-depth measure to prevent symlink attacks.
