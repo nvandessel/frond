@@ -569,3 +569,709 @@ func TestPushUntrackedBranchFails(t *testing.T) {
 		t.Errorf("error = %q, want 'not tracked'", err.Error())
 	}
 }
+
+func TestExitError(t *testing.T) {
+	e := &ExitError{Code: 2}
+	got := e.Error()
+	if got != "exit status 2" {
+		t.Errorf("ExitError.Error() = %q, want %q", got, "exit status 2")
+	}
+
+	e0 := &ExitError{Code: 0}
+	if e0.Error() != "exit status 0" {
+		t.Errorf("ExitError{0}.Error() = %q", e0.Error())
+	}
+}
+
+func TestValidateBranchNameEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{"empty", "", "cannot be empty"},
+		{"starts with dash", "-bad", "cannot start with '-'"},
+		{"contains dot-dot", "a..b", "cannot contain '..'"},
+		{"control character", "a\x00b", "control characters"},
+		{"valid simple", "feature-x", ""},
+		{"valid with slash", "feat/sub", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBranchName(tt.input)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("validateBranchName(%q) = %v, want nil", tt.input, err)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("validateBranchName(%q) = nil, want error containing %q", tt.input, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error = %q, want containing %q", err.Error(), tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestNewWithJSONOutput(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runTier(t, "new", "json-branch", "--json")
+	if err != nil {
+		t.Fatalf("tier new --json: %v", err)
+	}
+}
+
+func TestNewWithAfterDeps(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create two branches.
+	if err := runTier(t, "new", "dep-a"); err != nil {
+		t.Fatalf("tier new dep-a: %v", err)
+	}
+	// Go back to main so next new defaults to main.
+	gitCmd := exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+	if err := runTier(t, "new", "dep-b"); err != nil {
+		t.Fatalf("tier new dep-b: %v", err)
+	}
+
+	// Go back to main.
+	gitCmd = exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+
+	// Create a branch with --after deps.
+	if err := runTier(t, "new", "dep-c", "--on", "main", "--after", "dep-a,dep-b"); err != nil {
+		t.Fatalf("tier new dep-c: %v", err)
+	}
+
+	s := readState(t, dir)
+	b := s.Branches["dep-c"]
+	if len(b.After) != 2 || b.After[0] != "dep-a" || b.After[1] != "dep-b" {
+		t.Errorf("dep-c after = %v, want [dep-a, dep-b]", b.After)
+	}
+}
+
+func TestNewInvalidBranchName(t *testing.T) {
+	setupTestEnv(t)
+
+	// Branch name with ".." is invalid and gets past cobra flag parsing.
+	err := runTier(t, "new", "a..b")
+	if err == nil {
+		t.Fatal("expected error for branch name with '..'")
+	}
+	if !strings.Contains(err.Error(), "cannot contain '..'") {
+		t.Errorf("error = %q, want containing '..'", err.Error())
+	}
+}
+
+func TestNewParentNotExist(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runTier(t, "new", "feature-x", "--on", "nonexistent-parent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent parent")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("error = %q, want containing 'does not exist'", err.Error())
+	}
+}
+
+func TestNewAfterDepNotTracked(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runTier(t, "new", "feature-x", "--after", "nonexistent-dep")
+	if err == nil {
+		t.Fatal("expected error for untracked --after dep")
+	}
+	if !strings.Contains(err.Error(), "not tracked") {
+		t.Errorf("error = %q, want containing 'not tracked'", err.Error())
+	}
+}
+
+func TestTrackWithJSONOutput(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create a branch in git manually.
+	gitCmd := exec.Command("git", "checkout", "-b", "json-track", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+	gitCmd = exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+
+	err := runTier(t, "track", "json-track", "--on", "main", "--json")
+	if err != nil {
+		t.Fatalf("tier track --json: %v", err)
+	}
+}
+
+func TestTrackBranchNotExist(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runTier(t, "track", "ghost-branch", "--on", "main")
+	if err == nil {
+		t.Fatal("expected error tracking nonexistent branch")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("error = %q, want containing 'does not exist'", err.Error())
+	}
+}
+
+func TestTrackInvalidName(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runTier(t, "track", "a..b", "--on", "main")
+	if err == nil {
+		t.Fatal("expected error for branch name with '..'")
+	}
+	if !strings.Contains(err.Error(), "cannot contain '..'") {
+		t.Errorf("error = %q, want containing '..'", err.Error())
+	}
+}
+
+func TestUntrackWithJSONOutput(t *testing.T) {
+	setupTestEnv(t)
+
+	if err := runTier(t, "new", "json-untrack"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	err := runTier(t, "untrack", "json-untrack", "--json")
+	if err != nil {
+		t.Fatalf("tier untrack --json: %v", err)
+	}
+}
+
+func TestUntrackCurrentBranch(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create and stay on the branch.
+	if err := runTier(t, "new", "current-br"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	// Untrack without specifying the branch name (should use current).
+	err := runTier(t, "untrack")
+	if err != nil {
+		t.Fatalf("tier untrack (current): %v", err)
+	}
+
+	s := readState(t, dir)
+	if _, ok := s.Branches["current-br"]; ok {
+		t.Error("current-br should be untracked")
+	}
+}
+
+func TestUntrackWithDepsAndChildren(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create parent -> child chain with deps.
+	if err := runTier(t, "new", "mid-branch"); err != nil {
+		t.Fatalf("tier new mid-branch: %v", err)
+	}
+	if err := runTier(t, "new", "child-a", "--on", "mid-branch"); err != nil {
+		t.Fatalf("tier new child-a: %v", err)
+	}
+	// Go back to main, create another that depends on mid-branch.
+	gitCmd := exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+	if err := runTier(t, "new", "dep-on-mid", "--on", "main", "--after", "mid-branch"); err != nil {
+		t.Fatalf("tier new dep-on-mid: %v", err)
+	}
+
+	// Untrack mid-branch -> child-a should be reparented to main, dep-on-mid unblocked.
+	err := runTier(t, "untrack", "mid-branch")
+	if err != nil {
+		t.Fatalf("tier untrack mid-branch: %v", err)
+	}
+
+	s := readState(t, dir)
+	if _, ok := s.Branches["mid-branch"]; ok {
+		t.Error("mid-branch should be untracked")
+	}
+	childA := s.Branches["child-a"]
+	if childA.Parent != "main" {
+		t.Errorf("child-a parent = %q, want %q", childA.Parent, "main")
+	}
+	depOnMid := s.Branches["dep-on-mid"]
+	for _, dep := range depOnMid.After {
+		if dep == "mid-branch" {
+			t.Error("mid-branch should be removed from dep-on-mid's after list")
+		}
+	}
+}
+
+func TestCompletionBash(t *testing.T) {
+	err := runTier(t, "completion", "bash")
+	if err != nil {
+		t.Fatalf("tier completion bash: %v", err)
+	}
+}
+
+func TestCompletionZsh(t *testing.T) {
+	err := runTier(t, "completion", "zsh")
+	if err != nil {
+		t.Fatalf("tier completion zsh: %v", err)
+	}
+}
+
+func TestCompletionFish(t *testing.T) {
+	err := runTier(t, "completion", "fish")
+	if err != nil {
+		t.Fatalf("tier completion fish: %v", err)
+	}
+}
+
+func TestCompletionInvalidShell(t *testing.T) {
+	err := runTier(t, "completion", "powershell")
+	if err == nil {
+		t.Fatal("expected error for invalid shell")
+	}
+}
+
+func TestPushExistingPRUpdates(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create a tracked branch with a commit.
+	if err := runTier(t, "new", "update-pr-branch"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Set up remote.
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	// First push creates a PR.
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("first push: %v", err)
+	}
+
+	// Add another commit.
+	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "more work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Second push should update the existing PR (not create new).
+	err := runTier(t, "push")
+	if err != nil {
+		t.Fatalf("second push (update): %v", err)
+	}
+}
+
+func TestPushWithTitleAndDraft(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	if err := runTier(t, "new", "draft-branch"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	err := runTier(t, "push", "-t", "My Custom Title", "--draft")
+	if err != nil {
+		t.Fatalf("tier push with title and draft: %v", err)
+	}
+}
+
+func TestPushWithJSONOutput(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	if err := runTier(t, "new", "json-push"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	err := runTier(t, "push", "--json")
+	if err != nil {
+		t.Fatalf("tier push --json: %v", err)
+	}
+}
+
+func TestSyncNoBranches(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create a branch and immediately untrack it so state exists but has no branches.
+	if err := runTier(t, "new", "temp-branch"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+	if err := runTier(t, "untrack", "temp-branch"); err != nil {
+		t.Fatalf("tier untrack: %v", err)
+	}
+
+	// Set up remote.
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	// Sync with no branches should say "nothing to sync".
+	err := runTier(t, "sync")
+	if err != nil {
+		t.Fatalf("tier sync (no branches): %v", err)
+	}
+}
+
+func TestSyncNoBranchesJSON(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	if err := runTier(t, "new", "temp-branch"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+	if err := runTier(t, "untrack", "temp-branch"); err != nil {
+		t.Fatalf("tier untrack: %v", err)
+	}
+
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	err := runTier(t, "sync", "--json")
+	if err != nil {
+		t.Fatalf("tier sync --json (no branches): %v", err)
+	}
+}
+
+func TestSyncRebasesTrackedBranch(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create tracked branch.
+	if err := runTier(t, "new", "rebase-me"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	// Add a commit on the feature branch.
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "feature work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Go back to main and add a commit.
+	gitCmd = exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "main advance")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Set up remote.
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	// Sync should rebase rebase-me onto main.
+	err := runTier(t, "sync")
+	if err != nil {
+		t.Fatalf("tier sync: %v", err)
+	}
+}
+
+func TestSyncWithJSONOutput(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	if err := runTier(t, "new", "sync-json"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	err := runTier(t, "sync", "--json")
+	if err != nil {
+		t.Fatalf("tier sync --json: %v", err)
+	}
+}
+
+func TestStatusWithPRStates(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create a tracked branch and manually set a PR number.
+	if err := runTier(t, "new", "pr-status"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	// Manually write a PR number into state.
+	s := readState(t, dir)
+	prNum := 42
+	b := s.Branches["pr-status"]
+	b.PR = &prNum
+	s.Branches["pr-status"] = b
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "tier.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Status with --fetch should exercise fetchPRStates and outputHuman with prStates.
+	err = runTier(t, "status", "--fetch")
+	if err != nil {
+		t.Fatalf("tier status --fetch: %v", err)
+	}
+}
+
+func TestStatusFetchJSON(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	if err := runTier(t, "new", "pr-json-status"); err != nil {
+		t.Fatalf("tier new: %v", err)
+	}
+
+	// Manually set a PR number.
+	s := readState(t, dir)
+	prNum := 42
+	b := s.Branches["pr-json-status"]
+	b.PR = &prNum
+	s.Branches["pr-json-status"] = b
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "tier.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Status --fetch --json should exercise outputJSON with prStates.
+	err = runTier(t, "status", "--fetch", "--json")
+	if err != nil {
+		t.Fatalf("tier status --fetch --json: %v", err)
+	}
+}
+
+func TestPushWithUnmetDeps(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create dep and dependent branches.
+	if err := runTier(t, "new", "dep-branch"); err != nil {
+		t.Fatalf("tier new dep-branch: %v", err)
+	}
+
+	gitCmd := exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+
+	if err := runTier(t, "new", "with-deps", "--on", "main", "--after", "dep-branch"); err != nil {
+		t.Fatalf("tier new with-deps: %v", err)
+	}
+
+	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Set up remote.
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	// Push should succeed but warn about unmet deps.
+	err := runTier(t, "push")
+	if err != nil {
+		t.Fatalf("tier push (unmet deps): %v", err)
+	}
+}
+
+func TestSyncBlockedBranch(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create two branches: blocker and blocked.
+	if err := runTier(t, "new", "blocker"); err != nil {
+		t.Fatalf("tier new blocker: %v", err)
+	}
+	gitCmd := exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s\n%s", err, out)
+	}
+	if err := runTier(t, "new", "blocked-br", "--on", "main", "--after", "blocker"); err != nil {
+		t.Fatalf("tier new blocked-br: %v", err)
+	}
+
+	// Set up remote.
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	// Sync should see blocked-br as blocked.
+	err := runTier(t, "sync")
+	if err != nil {
+		t.Fatalf("tier sync (blocked): %v", err)
+	}
+}
+
+func TestNewEmptySyncResult(t *testing.T) {
+	r := newEmptySyncResult()
+	if r.Merged == nil || r.Rebased == nil || r.Unblocked == nil || r.Conflicts == nil {
+		t.Error("newEmptySyncResult should initialize all slices")
+	}
+	if r.Reparented == nil || r.Blocked == nil {
+		t.Error("newEmptySyncResult should initialize all maps")
+	}
+}
