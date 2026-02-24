@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -59,37 +61,90 @@ func setupTestEnv(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.Chdir(origDir) })
 
-	// Install a fake gh script.
+	// Install a fake gh script (platform-appropriate).
 	ghDir := t.TempDir()
-	script := filepath.Join(ghDir, "gh")
-	content := `#!/bin/bash
-if [[ "$1" == "pr" && "$2" == "create" ]]; then
-    echo '{"number": 42}'
-    exit 0
-fi
-if [[ "$1" == "pr" && "$2" == "view" ]]; then
-    echo '{"number": 42, "state": "OPEN", "baseRefName": "main"}'
-    exit 0
-fi
-if [[ "$1" == "pr" && "$2" == "edit" ]]; then
-    exit 0
-fi
-if [[ "$1" == "--version" ]]; then
-    echo "gh version 2.50.0"
-    exit 0
-fi
-exit 0
-`
-	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", ghDir+":"+os.Getenv("PATH"))
+	installFakeGH(t, ghDir)
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// Reset global state and cobra flags between tests.
 	jsonOut = false
 	resetCobraFlags()
 
 	return dir
+}
+
+// moduleRoot caches the repo root path, found before any test does os.Chdir.
+// fakeGHBin is the path to the pre-built fake gh binary.
+var (
+	moduleRoot string
+	fakeGHBin  string
+)
+
+func TestMain(m *testing.M) {
+	// Find module root before any test changes cwd.
+	dir, err := os.Getwd()
+	if err != nil {
+		panic("cmd_test: " + err.Error())
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			moduleRoot = dir
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			panic("cmd_test: could not find go.mod")
+		}
+		dir = parent
+	}
+
+	// Build the fake gh binary once for all tests.
+	tmpDir, err := os.MkdirTemp("", "fakegh-*")
+	if err != nil {
+		panic("cmd_test: " + err.Error())
+	}
+	binName := "gh"
+	if runtime.GOOS == "windows" {
+		binName = "gh.exe"
+	}
+	fakeGHBin = filepath.Join(tmpDir, binName)
+
+	cmd := exec.Command("go", "build", "-o", fakeGHBin, "./internal/gh/testdata/fakegh")
+	cmd.Dir = moduleRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Sprintf("cmd_test: building fakegh: %s\n%s", err, out))
+	}
+
+	code := m.Run()
+
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
+}
+
+// installFakeGH copies the pre-built fakegh binary into the given directory as "gh".
+func installFakeGH(t *testing.T, dir string) {
+	t.Helper()
+
+	binName := "gh"
+	if runtime.GOOS == "windows" {
+		binName = "gh.exe"
+	}
+	dst := filepath.Join(dir, binName)
+
+	// Hard-link (fast) or copy the pre-built binary.
+	if err := os.Link(fakeGHBin, dst); err != nil {
+		// Fallback to copy if hard link fails (cross-device).
+		data, err := os.ReadFile(fakeGHBin)
+		if err != nil {
+			t.Fatalf("reading fakegh binary: %v", err)
+		}
+		if err := os.WriteFile(dst, data, 0o755); err != nil {
+			t.Fatalf("writing fakegh binary: %v", err)
+		}
+	}
+
+	t.Setenv("FAKEGH_FAIL", "")
 }
 
 // resetCobraFlags resets all cobra flag values to their defaults so tests
