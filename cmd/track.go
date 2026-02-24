@@ -36,20 +36,20 @@ func runTrack(cmd *cobra.Command, args []string) error {
 	// 1. Lock state, defer unlock
 	unlock, err := state.Lock(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer unlock()
 
 	// 2. ReadOrInit state
 	s, err := state.ReadOrInit(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading state: %w", err)
 	}
 
 	// 3. Validate branch exists locally
 	exists, err := git.BranchExists(ctx, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("checking branch existence: %w", err)
 	}
 	if !exists {
 		return fmt.Errorf("branch '%s' does not exist", name)
@@ -67,7 +67,7 @@ func runTrack(cmd *cobra.Command, args []string) error {
 			// Also check if branch exists in git at all
 			onExists, err := git.BranchExists(ctx, onFlag)
 			if err != nil {
-				return err
+				return fmt.Errorf("checking parent branch: %w", err)
 			}
 			if !onExists {
 				return fmt.Errorf("branch '%s' does not exist", onFlag)
@@ -108,7 +108,7 @@ func runTrack(cmd *cobra.Command, args []string) error {
 
 	// 8. Write state
 	if err := state.Write(ctx, s); err != nil {
-		return err
+		return fmt.Errorf("writing state: %w", err)
 	}
 
 	// 9. Output

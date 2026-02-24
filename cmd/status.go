@@ -40,7 +40,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// 1. Read state (do NOT create state if missing).
 	s, err := state.Read(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading state: %w", err)
 	}
 	if s == nil {
 		return fmt.Errorf("no tier state found. Run 'tier new' or 'tier track' first")
