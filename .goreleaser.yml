@@ -23,6 +23,18 @@ archives:
 checksum:
   name_template: checksums.txt
 
+brews:
+  - repository:
+      owner: nvandessel
+      name: homebrew-tier
+    homepage: https://github.com/nvandessel/tier
+    description: Agent-first CLI for managing stacked PRs
+    license: Apache-2.0
+    install: |
+      bin.install "tier"
+    test: |
+      system "#{bin}/tier", "--version"
+
 changelog:
   sort: asc
   filters:
