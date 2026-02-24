@@ -1,7 +1,7 @@
 .PHONY: build test lint clean
 
 build:
-	go build -o tier .
+	go build -o frond .
 
 test:
 	go test ./...
@@ -10,4 +10,4 @@ lint:
 	golangci-lint run ./...
 
 clean:
-	rm -f tier
+	rm -f frond
