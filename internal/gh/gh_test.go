@@ -7,71 +7,104 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-// setupFakeGH creates a fake gh script in a temp directory and prepends it
-// to PATH so that exec.LookPath and exec.Command find it first.
-// The fake script records all invocations to a record file and returns
-// canned JSON responses based on the first two arguments.
-func setupFakeGH(t *testing.T) (recordFile string) {
+// fakeGHBin is the path to the pre-built fake gh binary, built once in TestMain.
+var fakeGHBin string
+
+func TestMain(m *testing.M) {
+	// Find module root.
+	dir, err := os.Getwd()
+	if err != nil {
+		panic("gh_test: " + err.Error())
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			panic("gh_test: could not find go.mod")
+		}
+		dir = parent
+	}
+
+	// Build the fake gh binary once.
+	tmpDir, err := os.MkdirTemp("", "fakegh-*")
+	if err != nil {
+		panic("gh_test: " + err.Error())
+	}
+	binName := "gh"
+	if runtime.GOOS == "windows" {
+		binName = "gh.exe"
+	}
+	fakeGHBin = filepath.Join(tmpDir, binName)
+
+	cmd := exec.Command("go", "build", "-o", fakeGHBin, "./internal/gh/testdata/fakegh")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Sprintf("gh_test: building fakegh: %s\n%s", err, out))
+	}
+
+	code := m.Run()
+
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
+}
+
+// installFakeGH copies the pre-built binary into a temp dir and returns that dir.
+func installFakeGH(t *testing.T) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	recordFile = filepath.Join(dir, "gh_calls.log")
+	binName := "gh"
+	if runtime.GOOS == "windows" {
+		binName = "gh.exe"
+	}
+	dst := filepath.Join(dir, binName)
 
-	script := filepath.Join(dir, "gh")
-	content := fmt.Sprintf(`#!/bin/bash
-echo "$@" >> "%s"
-# Return canned responses based on subcommand
-if [[ "$1" == "--version" ]]; then
-    echo "gh version 2.50.0 (2024-05-01)"
-    exit 0
-fi
-if [[ "$1" == "pr" && "$2" == "create" ]]; then
-    echo '{"number": 42}'
-    exit 0
-fi
-if [[ "$1" == "pr" && "$2" == "view" ]]; then
-    echo '{"number": 42, "state": "OPEN", "baseRefName": "main"}'
-    exit 0
-fi
-if [[ "$1" == "pr" && "$2" == "edit" ]]; then
-    exit 0
-fi
-exit 0
-`, recordFile)
-	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
-		t.Fatal(err)
+	if err := os.Link(fakeGHBin, dst); err != nil {
+		data, err := os.ReadFile(fakeGHBin)
+		if err != nil {
+			t.Fatalf("reading fakegh: %v", err)
+		}
+		if err := os.WriteFile(dst, data, 0o755); err != nil {
+			t.Fatalf("writing fakegh: %v", err)
+		}
 	}
 
-	// Prepend the fake gh directory to PATH
-	origPATH := os.Getenv("PATH")
-	t.Setenv("PATH", dir+":"+origPATH)
+	return dir
+}
+
+// setupFakeGH installs the fake gh binary and prepends it to PATH.
+// Returns the path to the record file where invocations are logged.
+func setupFakeGH(t *testing.T) (recordFile string) {
+	t.Helper()
+
+	ghDir := installFakeGH(t)
+	recordFile = filepath.Join(ghDir, "gh_calls.log")
+
+	t.Setenv("FAKEGH_RECORD", recordFile)
+	t.Setenv("FAKEGH_FAIL", "")
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	return recordFile
 }
 
-// setupFailingGH creates a fake gh that always exits non-zero.
+// setupFailingGH installs the fake gh in fail mode.
 func setupFailingGH(t *testing.T) string {
 	t.Helper()
 
-	dir := t.TempDir()
-	recordFile := filepath.Join(dir, "gh_calls.log")
+	ghDir := installFakeGH(t)
+	recordFile := filepath.Join(ghDir, "gh_calls.log")
 
-	script := filepath.Join(dir, "gh")
-	content := fmt.Sprintf(`#!/bin/bash
-echo "$@" >> "%s"
-echo "fatal: something went wrong" >&2
-exit 1
-`, recordFile)
-	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	origPATH := os.Getenv("PATH")
-	t.Setenv("PATH", dir+":"+origPATH)
+	t.Setenv("FAKEGH_RECORD", recordFile)
+	t.Setenv("FAKEGH_FAIL", "1")
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	return recordFile
 }

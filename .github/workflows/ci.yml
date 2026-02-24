@@ -13,9 +13,12 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Configure git line endings
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
@@ -26,12 +29,14 @@ jobs:
         run: go build ./...
 
       - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
+        shell: bash
+        run: go test -race "-coverprofile=coverage.out" ./...
 
       - name: Vet
         run: go vet ./...
 
       - name: Format check
+        shell: bash
         run: |
           if [ -n "$(gofmt -l .)" ]; then
             echo "Files not formatted:"
