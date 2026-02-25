@@ -44,6 +44,12 @@ jobs:
             exit 1
           fi
 
+      - name: Lint
+        if: matrix.os == 'ubuntu-latest'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
       - name: Upload coverage
         if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
