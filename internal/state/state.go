@@ -71,7 +71,7 @@ func Read(ctx context.Context) (*State, error) {
 		return nil, err
 	}
 
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(p) //nolint:gosec // path is constructed internally from git common dir
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotInitialized
@@ -95,7 +95,7 @@ func Write(ctx context.Context, s *State) error {
 	}
 
 	dir := filepath.Dir(p)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("creating directory %s: %w", dir, err)
 	}
 
@@ -112,7 +112,7 @@ func Write(ctx context.Context, s *State) error {
 	if err := rejectSymlink(p); err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("writing temp file %s: %w", tmp, err)
 	}
 
@@ -180,7 +180,7 @@ func Lock(ctx context.Context) (unlock func(), err error) {
 // tryLock attempts to create the lockfile exclusively. Returns true if
 // the lock was acquired. It writes the current PID for stale detection.
 func tryLock(path string) (bool, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // path is the lockfile constructed internally
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return false, nil

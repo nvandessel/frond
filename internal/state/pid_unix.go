@@ -13,7 +13,7 @@ import (
 // is still running. Returns false if the PID cannot be read or the process
 // is not alive.
 func lockPIDAlive(path string) bool {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is the lockfile constructed internally
 	if err != nil {
 		return false
 	}
