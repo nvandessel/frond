@@ -52,7 +52,6 @@ jobs:
 
       - name: Upload coverage
         if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: coverage.out
-          token: ${{ secrets.CODECOV_TOKEN }}
