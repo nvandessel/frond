@@ -1,0 +1,4 @@
+# RBAC Rules
+admin: all
+user: read, write own
+viewer: read only

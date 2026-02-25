@@ -1,0 +1,4 @@
+# Auth Config
+jwt_secret: changeme
+token_expiry: 3600
+refresh_expiry: 86400
