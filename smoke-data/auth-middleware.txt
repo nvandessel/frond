@@ -1,0 +1,2 @@
+# Auth Middleware
+check_token -> validate_jwt -> attach_user -> next
