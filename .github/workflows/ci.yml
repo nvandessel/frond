@@ -48,7 +48,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2
+          version: v2.10.1
 
       - name: Upload coverage
         if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
