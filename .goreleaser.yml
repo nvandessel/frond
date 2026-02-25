@@ -27,6 +27,7 @@ brews:
   - repository:
       owner: nvandessel
       name: homebrew-frond
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/nvandessel/frond
     description: Agent-first CLI for managing stacked PRs
     license: Apache-2.0
