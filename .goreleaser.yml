@@ -14,16 +14,18 @@ builds:
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
+    overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: checksums.txt
 
-brews:
+homebrew_casks:
   - repository:
       owner: nvandessel
       name: homebrew-frond
@@ -31,10 +33,8 @@ brews:
     homepage: https://github.com/nvandessel/frond
     description: Agent-first CLI for managing stacked PRs
     license: Apache-2.0
-    install: |
-      bin.install "frond"
-    test: |
-      system "#{bin}/frond", "--version"
+    binaries:
+      - frond
 
 changelog:
   sort: asc
