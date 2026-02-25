@@ -1,0 +1,5 @@
+GET  /users
+POST /users
+GET  /users/:id
+PUT  /users/:id
+DEL  /users/:id
