@@ -34,7 +34,7 @@ func main() {
 	if len(args) >= 2 && args[0] == "pr" {
 		switch args[1] {
 		case "create":
-			fmt.Println(`{"number": 42}`)
+			fmt.Println("https://github.com/test/repo/pull/42")
 		case "view":
 			fmt.Println(`{"number": 42, "state": "OPEN", "baseRefName": "main"}`)
 		case "edit":
