@@ -1,0 +1,4 @@
+# Integration Tests
+test_auth_on_routes: POST /users requires valid JWT
+test_rbac_enforcement: viewer cannot DELETE /users/:id
+test_rate_limit_with_auth: authenticated users get higher limits

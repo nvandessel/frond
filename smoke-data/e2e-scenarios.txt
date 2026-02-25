@@ -1,0 +1,4 @@
+# E2E Scenarios
+1. Register user -> get token -> access protected route
+2. Expired token -> refresh -> retry
+3. Rate limit hit -> backoff -> retry
