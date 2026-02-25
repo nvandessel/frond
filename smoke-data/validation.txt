@@ -1,0 +1,4 @@
+# Validation
+name: required, min=2, max=100
+email: required, email_format
+role: required, one_of(admin,user,viewer)

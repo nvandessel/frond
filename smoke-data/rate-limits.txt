@@ -1,0 +1,4 @@
+# Rate Limiting
+window: 60s
+max_requests: 100
+burst: 20
