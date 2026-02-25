@@ -73,6 +73,7 @@ type PRCreateOpts struct {
 }
 
 // PRCreate creates a pull request and returns the new PR number.
+// gh pr create outputs a URL like https://github.com/owner/repo/pull/123.
 func PRCreate(ctx context.Context, opts PRCreateOpts) (int, error) {
 	args := []string{
 		"pr", "create",
@@ -84,20 +85,24 @@ func PRCreate(ctx context.Context, opts PRCreateOpts) (int, error) {
 	if opts.Draft {
 		args = append(args, "--draft")
 	}
-	args = append(args, "--json", "number")
 
 	out, err := run(ctx, args...)
 	if err != nil {
 		return 0, err
 	}
 
-	var result struct {
-		Number int `json:"number"`
+	// Parse PR number from the URL in the last line of output.
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lastLine := lines[len(lines)-1]
+	idx := strings.LastIndex(lastLine, "/")
+	if idx < 0 {
+		return 0, fmt.Errorf("unexpected pr create output: %s", out)
 	}
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		return 0, fmt.Errorf("parsing pr create output: %w", err)
+	num, err := strconv.Atoi(lastLine[idx+1:])
+	if err != nil {
+		return 0, fmt.Errorf("parsing PR number from %q: %w", lastLine, err)
 	}
-	return result.Number, nil
+	return num, nil
 }
 
 // PRView retrieves metadata about a pull request by number.
