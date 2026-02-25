@@ -1,0 +1,4 @@
+# Config
+db_host: localhost
+db_port: 5432
+cache_ttl: 300

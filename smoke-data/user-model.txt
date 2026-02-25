@@ -1,0 +1,4 @@
+# User Model
+name: string
+email: string
+role: enum(admin, user, viewer)

@@ -1,0 +1,2 @@
+# Migration 001
+CREATE TABLE users (id SERIAL, name TEXT, email TEXT);
