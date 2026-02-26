@@ -9,6 +9,48 @@ Minimal, agent-first CLI for managing stacked PRs with DAG dependencies on GitHu
 
 Single binary. Zero config.
 
+```mermaid
+graph TD
+    main[main]
+    payments[feature/payments]
+    stripe["pay/stripe-client ✓"]
+    tests["pay/stripe-tests ✓"]
+    schema["pay/db-schema ✓"]
+    migrations["pay/db-migrations ✓"]
+    handlers["pay/api-handlers ⏳"]
+    e2e["pay/e2e ⏳"]
+
+    main --> payments
+    payments --> stripe
+    stripe --> tests
+    payments --> schema
+    schema --> migrations
+    payments --> handlers
+    payments --> e2e
+
+    stripe -. "must merge first" .-> handlers
+    schema -.-> handlers
+    handlers -.-> e2e
+    tests -.-> e2e
+    migrations -.-> e2e
+
+    style main fill:#e9ecef,stroke:#495057,color:#1e1e1e
+    style payments fill:#a5d8ff,stroke:#1971c2,color:#1e1e1e
+    style stripe fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+    style tests fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+    style schema fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+    style migrations fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+    style handlers fill:#ffec99,stroke:#e8590c,color:#1e1e1e
+    style e2e fill:#ffec99,stroke:#e8590c,color:#1e1e1e
+
+    linkStyle 0,1,2,3,4,5,6 stroke:#495057,stroke-width:2px
+    linkStyle 7,8,9,10,11 stroke:#9c36b5,stroke-width:2px,stroke-dasharray:5 5
+```
+
+> **Solid** = `--on` (git parent / PR base) · **Dashed** = `--after` (merge dependency)
+>
+> Green = ready to merge · Yellow = blocked by dependencies
+
 ## Install
 
 **Homebrew** (macOS/Linux):
@@ -94,7 +136,59 @@ When `pay/stripe-client` merges, `frond sync` reparents `pay/stripe-tests`, unbl
 
 ## Key concepts
 
-- **`--on`** sets the git parent (PR base). One per branch.
-- **`--after`** sets logical dependencies (merge ordering). Zero or more.
-- These are orthogonal — `--on` for PR targeting, `--after` for merge ordering.
+<table>
+<tr>
+<td width="50%">
+
+**`--on`** sets the git parent (PR base)
+
+```mermaid
+graph TD
+    main[main]
+    feature["feature/auth"]
+    login["auth/login"]
+    signup["auth/signup"]
+
+    main --> feature
+    feature --> login
+    feature --> signup
+
+    style main fill:#e9ecef,stroke:#495057,color:#1e1e1e
+    style feature fill:#a5d8ff,stroke:#1971c2,color:#1e1e1e
+    style login fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+    style signup fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+
+    linkStyle 0,1,2 stroke:#495057,stroke-width:2px
+```
+
+Each branch has one parent. PRs target their parent branch.
+
+</td>
+<td width="50%">
+
+**`--after`** sets merge dependencies
+
+```mermaid
+graph TD
+    login["auth/login ✓"]
+    signup["auth/signup ✓"]
+    e2e["auth/e2e ⏳"]
+
+    login -. "must merge first" .-> e2e
+    signup -.-> e2e
+
+    style login fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+    style signup fill:#b2f2bb,stroke:#2f9e44,color:#1e1e1e
+    style e2e fill:#ffec99,stroke:#e8590c,color:#1e1e1e
+
+    linkStyle 0,1 stroke:#9c36b5,stroke-width:2px,stroke-dasharray:5 5
+```
+
+Zero or more deps per branch. Controls merge ordering, not PR targeting.
+
+</td>
+</tr>
+</table>
+
+- These are **orthogonal** — `--on` for PR targeting, `--after` for merge ordering.
 - State lives at `<git-common-dir>/frond.json` — shared across worktrees, invisible to the working tree.
