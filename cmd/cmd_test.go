@@ -1328,3 +1328,134 @@ func TestInitPreservesExistingState(t *testing.T) {
 		t.Error("init should preserve existing branches")
 	}
 }
+
+func TestSyncMergedPR(t *testing.T) {
+	mock, dir := setupTestEnv(t)
+
+	// Create parent and child branches.
+	if err := runTier(t, "new", "merged-branch"); err != nil {
+		t.Fatalf("frond new merged-branch: %v", err)
+	}
+	if err := runTier(t, "new", "child-of-merged", "--on", "merged-branch"); err != nil {
+		t.Fatalf("frond new child-of-merged: %v", err)
+	}
+
+	// Manually assign PR numbers to state.
+	s := readState(t, dir)
+	pr1 := 10
+	b := s.Branches["merged-branch"]
+	b.PR = &pr1
+	s.Branches["merged-branch"] = b
+	pr2 := 20
+	c := s.Branches["child-of-merged"]
+	c.PR = &pr2
+	s.Branches["child-of-merged"] = c
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "frond.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock PRState to return MERGED for PR #10.
+	mock.PRStateFn = func(_ context.Context, prNumber int) (string, error) {
+		if prNumber == 10 {
+			return "MERGED", nil
+		}
+		return "OPEN", nil
+	}
+
+	// Track retarget calls.
+	var retargetCalls []int
+	mock.RetargetPRFn = func(_ context.Context, prNumber int, _ string) error {
+		retargetCalls = append(retargetCalls, prNumber)
+		return nil
+	}
+
+	err = runTier(t, "sync")
+	if err != nil {
+		t.Fatalf("frond sync: %v", err)
+	}
+
+	// merged-branch should be removed, child reparented to main.
+	s = readState(t, dir)
+	if _, ok := s.Branches["merged-branch"]; ok {
+		t.Error("merged-branch should be removed from state")
+	}
+	child := s.Branches["child-of-merged"]
+	if child.Parent != "main" {
+		t.Errorf("child parent = %q, want main", child.Parent)
+	}
+
+	// Child PR should have been retargeted.
+	found := false
+	for _, n := range retargetCalls {
+		if n == 20 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected RetargetPR called for child PR #20")
+	}
+}
+
+func TestSyncRebaseConflict(t *testing.T) {
+	mock, _ := setupTestEnv(t)
+
+	if err := runTier(t, "new", "conflict-branch"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+
+	// Mock rebase to return a conflict error.
+	mock.RebaseFn = func(_ context.Context, _, branch string) error {
+		return &driver.RebaseConflictError{Branch: branch, Detail: "CONFLICT in file.go"}
+	}
+
+	err := runTier(t, "sync")
+
+	// Should return ExitError with code 2.
+	if err == nil {
+		t.Fatal("expected error from sync with conflict")
+	}
+	exitErr, ok := err.(*ExitError)
+	if !ok {
+		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != 2 {
+		t.Errorf("exit code = %d, want 2", exitErr.Code)
+	}
+}
+
+func TestResolveDriverFromState(t *testing.T) {
+	// Empty driver resolves to native.
+	st := &state.State{Driver: ""}
+	drv, err := resolveDriver(st)
+	if err != nil {
+		t.Fatalf("resolveDriver empty: %v", err)
+	}
+	if drv.Name() != "native" {
+		t.Errorf("Name() = %q, want native", drv.Name())
+	}
+
+	// Unknown driver errors.
+	st = &state.State{Driver: "bogus"}
+	_, err = resolveDriver(st)
+	if err == nil {
+		t.Fatal("expected error for unknown driver in state")
+	}
+
+	// driverOverride takes precedence.
+	mock := driver.NewMock()
+	driverOverride = mock
+	defer func() { driverOverride = nil }()
+
+	st = &state.State{Driver: "bogus"} // would fail without override
+	drv, err = resolveDriver(st)
+	if err != nil {
+		t.Fatalf("resolveDriver with override: %v", err)
+	}
+	if drv.Name() != "mock" {
+		t.Errorf("Name() = %q, want mock", drv.Name())
+	}
+}

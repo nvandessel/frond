@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"os/exec"
 	"testing"
 )
 
@@ -20,6 +21,28 @@ func TestResolveNative(t *testing.T) {
 	}
 	if drv.Name() != "native" {
 		t.Errorf("Name() = %q, want %q", drv.Name(), "native")
+	}
+}
+
+func TestResolveGraphite(t *testing.T) {
+	_, err := exec.LookPath("gt")
+	if err != nil {
+		// gt not installed — Resolve should fail with a descriptive error.
+		_, resolveErr := Resolve("graphite")
+		if resolveErr == nil {
+			t.Fatal("Resolve(graphite) should fail when gt is not installed")
+		}
+		t.Logf("gt not installed, Resolve error: %v (expected)", resolveErr)
+		return
+	}
+
+	// gt is installed — Resolve should succeed.
+	drv, err := Resolve("graphite")
+	if err != nil {
+		t.Fatalf("Resolve graphite: %v", err)
+	}
+	if drv.Name() != "graphite" {
+		t.Errorf("Name() = %q, want %q", drv.Name(), "graphite")
 	}
 }
 

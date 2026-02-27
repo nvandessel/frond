@@ -55,11 +55,10 @@ func (n *Native) Push(ctx context.Context, opts PushOpts) (*PushResult, error) {
 	}
 
 	// New PR — create it.
-	title := opts.Title
 	prNum, err := gh.PRCreate(ctx, gh.PRCreateOpts{
 		Base:  opts.Base,
 		Head:  opts.Branch,
-		Title: title,
+		Title: opts.Title,
 		Body:  opts.Body,
 		Draft: opts.Draft,
 	})

@@ -66,10 +66,9 @@ func (g *Graphite) Push(ctx context.Context, opts PushOpts) (*PushResult, error)
 	return &PushResult{PRNumber: prNum, Created: true}, nil
 }
 
-func (g *Graphite) Rebase(_ context.Context, _, _ string) error {
+func (g *Graphite) Rebase(ctx context.Context, _, _ string) error {
 	// gt restack handles the entire stack; called per-branch in topo loop
 	// but is idempotent so repeated calls are safe.
-	ctx := context.Background()
 	out, err := runGT(ctx, "restack")
 	if err != nil {
 		if strings.Contains(out, "CONFLICT") || strings.Contains(out, "could not apply") {
