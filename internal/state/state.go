@@ -26,6 +26,7 @@ type Branch struct {
 type State struct {
 	Version  int               `json:"version"`
 	Trunk    string            `json:"trunk"`
+	Driver   string            `json:"driver,omitempty"`
 	Branches map[string]Branch `json:"branches"`
 }
 
@@ -41,8 +42,8 @@ const (
 	stateVersion      = 1
 )
 
-// gitCommonDir is a package-level variable so tests can override it.
-var gitCommonDir = func(ctx context.Context) (string, error) {
+// GitCommonDir is a package-level variable so tests can override it.
+var GitCommonDir = func(ctx context.Context) (string, error) {
 	dir, err := git.CommonDir(ctx)
 	if err != nil {
 		return "", err
@@ -56,7 +57,7 @@ var gitCommonDir = func(ctx context.Context) (string, error) {
 
 // Path returns the absolute path to frond.json.
 func Path(ctx context.Context) (string, error) {
-	dir, err := gitCommonDir(ctx)
+	dir, err := GitCommonDir(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -136,7 +137,7 @@ func Write(ctx context.Context, s *State) error {
 //	if err != nil { ... }
 //	defer unlock()
 func Lock(ctx context.Context) (unlock func(), err error) {
-	dir, err := gitCommonDir(ctx)
+	dir, err := GitCommonDir(ctx)
 	if err != nil {
 		return noop, err
 	}

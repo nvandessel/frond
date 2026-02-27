@@ -6,8 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nvandessel/frond/internal/gh"
-	"github.com/nvandessel/frond/internal/git"
+	"github.com/nvandessel/frond/internal/driver"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -51,28 +50,29 @@ func humanizeTitle(branch string) string {
 func runPush(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// 1. Check gh is available.
-	if err := gh.Available(); err != nil {
-		return fmt.Errorf("gh CLI is required. Install: https://cli.github.com")
-	}
-
-	// 2. Get current branch.
-	branch, err := git.CurrentBranch(ctx)
-	if err != nil {
-		return fmt.Errorf("getting current branch: %w", err)
-	}
-
-	// 3. Lock state, defer unlock.
+	// 1. Lock state, defer unlock.
 	unlock, err := state.Lock(ctx)
 	if err != nil {
 		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer unlock()
 
-	// 4. Read state (not ReadOrInit).
+	// 2. Read state (not ReadOrInit).
 	st, err := state.Read(ctx)
 	if err != nil {
 		return fmt.Errorf("reading state: %w", err)
+	}
+
+	// 3. Resolve driver.
+	drv, err := resolveDriver(st)
+	if err != nil {
+		return err
+	}
+
+	// 4. Get current branch.
+	branch, err := drv.CurrentBranch(ctx)
+	if err != nil {
+		return fmt.Errorf("getting current branch: %w", err)
 	}
 
 	// 5. Current branch must be tracked.
@@ -81,53 +81,35 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("current branch '%s' is not tracked", branch)
 	}
 
-	// 6. Push to origin.
-	if err := git.Push(ctx, branch); err != nil {
-		return fmt.Errorf("pushing to origin: %w", err)
+	// 6. Build push opts.
+	title, _ := cmd.Flags().GetString("title")
+	if title == "" {
+		title = humanizeTitle(branch)
+	}
+	body, _ := cmd.Flags().GetString("body")
+	draft, _ := cmd.Flags().GetBool("draft")
+
+	opts := driver.PushOpts{
+		Branch:     branch,
+		Base:       br.Parent,
+		Title:      title,
+		Body:       body,
+		Draft:      draft,
+		ExistingPR: br.PR,
 	}
 
-	created := false
-	var prNumber int
+	// 7. Push (creates or updates PR).
+	result, err := drv.Push(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("pushing: %w", err)
+	}
 
-	// 7. If no PR exists, create one.
-	if br.PR == nil {
-		title, _ := cmd.Flags().GetString("title")
-		if title == "" {
-			title = humanizeTitle(branch)
-		}
-		body, _ := cmd.Flags().GetString("body")
-		draft, _ := cmd.Flags().GetBool("draft")
-
-		prNumber, err = gh.PRCreate(ctx, gh.PRCreateOpts{
-			Base:  br.Parent,
-			Head:  branch,
-			Title: title,
-			Body:  body,
-			Draft: draft,
-		})
-		if err != nil {
-			return fmt.Errorf("creating PR: %w", err)
-		}
-
-		br.PR = &prNumber
+	// 8. Write PR number to state if created.
+	if result.Created {
+		br.PR = &result.PRNumber
 		st.Branches[branch] = br
 		if err := state.Write(ctx, st); err != nil {
 			return fmt.Errorf("writing state: %w", err)
-		}
-		created = true
-	} else {
-		// 8. PR exists — check if base needs retargeting.
-		prNumber = *br.PR
-
-		info, err := gh.PRView(ctx, prNumber)
-		if err != nil {
-			return fmt.Errorf("viewing PR #%d: %w", prNumber, err)
-		}
-
-		if info.BaseRefName != br.Parent {
-			if err := gh.PREdit(ctx, prNumber, br.Parent); err != nil {
-				return fmt.Errorf("retargeting PR #%d: %w", prNumber, err)
-			}
 		}
 	}
 
@@ -151,15 +133,15 @@ func runPush(cmd *cobra.Command, args []string) error {
 	if jsonOut {
 		return printJSON(pushResult{
 			Branch:  branch,
-			PR:      prNumber,
-			Created: created,
+			PR:      result.PRNumber,
+			Created: result.Created,
 		})
 	}
 	action := "updated"
-	if created {
+	if result.Created {
 		action = "created"
 	}
-	fmt.Printf("Pushed %s. PR #%d [%s]\n", branch, prNumber, action)
+	fmt.Printf("Pushed %s. PR #%d [%s]\n", branch, result.PRNumber, action)
 
 	return nil
 }

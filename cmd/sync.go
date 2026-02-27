@@ -7,8 +7,7 @@ import (
 	"strings"
 
 	"github.com/nvandessel/frond/internal/dag"
-	"github.com/nvandessel/frond/internal/gh"
-	"github.com/nvandessel/frond/internal/git"
+	"github.com/nvandessel/frond/internal/driver"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -69,13 +68,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Step 2b: Resolve driver.
+	drv, err := resolveDriver(st)
+	if err != nil {
+		return err
+	}
+
 	// Step 3: Fetch from origin.
-	if err := git.Fetch(ctx); err != nil {
+	if err := drv.Fetch(ctx); err != nil {
 		return fmt.Errorf("fetching: %w", err)
 	}
 
 	// Save current branch before any operations so we can restore it.
-	originalBranch, err := git.CurrentBranch(ctx)
+	originalBranch, err := drv.CurrentBranch(ctx)
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -90,12 +95,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		if b.PR == nil {
 			continue
 		}
-		info, err := gh.PRView(ctx, *b.PR)
+		prState, err := drv.PRState(ctx, *b.PR)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not check PR #%d for %s: %v\n", *b.PR, name, err)
 			continue
 		}
-		if info.State == gh.PRStateMerged {
+		if prState == "MERGED" {
 			mergedBranches = append(mergedBranches, name)
 			mergedData[name] = b
 		}
@@ -125,7 +130,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 				// 5b: Update child PRs to point to new parent.
 				if childBranch.PR != nil {
-					if err := gh.PREdit(ctx, *childBranch.PR, mergedParent); err != nil {
+					if err := drv.RetargetPR(ctx, *childBranch.PR, mergedParent); err != nil {
 						fmt.Fprintf(os.Stderr, "warning: could not retarget PR #%d for %s: %v\n", *childBranch.PR, childName, err)
 					}
 				}
@@ -181,8 +186,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 		ri := readinessMap[name]
 		if ri.Ready {
 			parent := st.Branches[name].Parent
-			if err := git.Rebase(ctx, parent, name); err != nil {
-				var conflictErr *git.RebaseConflictError
+			if err := drv.Rebase(ctx, parent, name); err != nil {
+				var conflictErr *driver.RebaseConflictError
 				if errors.As(err, &conflictErr) {
 					conflictBranch = name
 					result.Conflicts = append(result.Conflicts, name)
@@ -221,7 +226,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	// Restore original branch after rebasing.
 	if len(result.Rebased) > 0 || conflictBranch != "" {
-		if err := git.Checkout(ctx, originalBranch); err != nil {
+		if err := drv.Checkout(ctx, originalBranch); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not restore branch %s: %v\n", originalBranch, err)
 		}
 	}
