@@ -125,6 +125,47 @@ func PREdit(ctx context.Context, prNumber int, newBase string) error {
 	return err
 }
 
+// Comment holds metadata about a PR/issue comment.
+type Comment struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+}
+
+// PRCommentList returns all comments on a pull request.
+// Uses --paginate to handle PRs with many comments.
+func PRCommentList(ctx context.Context, prNumber int) ([]Comment, error) {
+	out, err := run(ctx, "api", "--paginate",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", prNumber))
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out) == "" {
+		return nil, nil
+	}
+
+	var comments []Comment
+	if err := json.Unmarshal([]byte(out), &comments); err != nil {
+		return nil, fmt.Errorf("parsing comment list: %w", err)
+	}
+	return comments, nil
+}
+
+// PRCommentCreate creates a new comment on a pull request.
+func PRCommentCreate(ctx context.Context, prNumber int, body string) error {
+	_, err := run(ctx, "api",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", prNumber),
+		"-f", "body="+body)
+	return err
+}
+
+// PRCommentUpdate updates an existing comment by ID.
+func PRCommentUpdate(ctx context.Context, commentID int, body string) error {
+	_, err := run(ctx, "api", "-X", "PATCH",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", commentID),
+		"-f", "body="+body)
+	return err
+}
+
 // PR state constants returned by the GitHub API.
 const (
 	PRStateOpen   = "OPEN"

@@ -1321,6 +1321,145 @@ func TestSyncBlockedBranch(t *testing.T) {
 	}
 }
 
+func TestPushCreatesStackComment(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Set up FAKEGH_RECORD to capture calls.
+	ghDir := os.Getenv("PATH")
+	// PATH is already set by setupTestEnv with fakegh first.
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+
+	// Create a tracked branch with a commit.
+	if err := runTier(t, "new", "stack-comment-branch"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "feature work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Set up a remote.
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	// Push should create a PR and then post a stack comment.
+	err := runTier(t, "push")
+	if err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	// Verify gh api calls were made for comment operations.
+	calls := readGHCalls(t, recordFile)
+	var hasCommentList, hasCommentCreate bool
+	for _, call := range calls {
+		if strings.Contains(call, "api") && strings.Contains(call, "comments") {
+			if strings.Contains(call, "--paginate") {
+				hasCommentList = true
+			}
+			if strings.Contains(call, "body=") {
+				hasCommentCreate = true
+			}
+		}
+	}
+	if !hasCommentList {
+		t.Errorf("expected comment list API call, calls: %v", calls)
+	}
+	if !hasCommentCreate {
+		t.Errorf("expected comment create API call, calls: %v", calls)
+	}
+	_ = ghDir // suppress unused warning
+}
+
+func TestPushUpdatesStackComment(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+	t.Setenv("FAKEGH_EXISTING_COMMENT", "1")
+
+	// Create a tracked branch with a commit.
+	if err := runTier(t, "new", "update-comment-branch"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "feature work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Set up a remote.
+	remoteDir := t.TempDir()
+	bareInit := exec.Command("git", "init", "--bare")
+	bareInit.Dir = remoteDir
+	if out, err := bareInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s\n%s", err, out)
+	}
+	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
+	addRemote.Dir = dir
+	if out, err := addRemote.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s\n%s", err, out)
+	}
+	pushMain := exec.Command("git", "push", "origin", "main")
+	pushMain.Dir = dir
+	if out, err := pushMain.CombinedOutput(); err != nil {
+		t.Fatalf("git push main: %s\n%s", err, out)
+	}
+
+	// Push should create a PR and then update the existing stack comment.
+	err := runTier(t, "push")
+	if err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	// Verify gh api PATCH call was made (update, not create).
+	calls := readGHCalls(t, recordFile)
+	var hasUpdate bool
+	for _, call := range calls {
+		if strings.Contains(call, "-X PATCH") && strings.Contains(call, "issues/comments/") {
+			hasUpdate = true
+			break
+		}
+	}
+	if !hasUpdate {
+		t.Errorf("expected comment update (PATCH) API call, calls: %v", calls)
+	}
+}
+
+// readGHCalls reads the recorded gh CLI calls from the record file.
+func readGHCalls(t *testing.T, recordFile string) []string {
+	t.Helper()
+	data, err := os.ReadFile(recordFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return nil
+	}
+	return lines
+}
+
 func TestNewEmptySyncResult(t *testing.T) {
 	r := newEmptySyncResult()
 	if r.Merged == nil || r.Rebased == nil || r.Unblocked == nil || r.Conflicts == nil {

@@ -131,7 +131,10 @@ func runPush(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 9. Check for unmet --after deps: warn if any are still tracked.
+	// 9. Update stack comments on all PRs.
+	updateStackComments(ctx, st)
+
+	// 10. Check for unmet --after deps: warn if any are still tracked.
 	if len(br.After) > 0 {
 		var unmet []string
 		for _, dep := range br.After {
@@ -144,7 +147,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 10. Output.
+	// 11. Output.
 	if jsonOut {
 		return printJSON(pushResult{
 			Branch:  branch,

@@ -147,6 +147,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing state: %w", err)
 	}
 
+	// Step 5e: Update stack comments when merges changed the tree structure.
+	if len(mergedBranches) > 0 {
+		updateStackComments(ctx, st)
+	}
+
 	// Step 6: Rebase remaining branches in topological order.
 	dagBranches := stateToDag(st.Branches)
 

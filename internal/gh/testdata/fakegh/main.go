@@ -8,6 +8,65 @@ import (
 	"strings"
 )
 
+// handleAPI handles "gh api" subcommands for comment operations.
+func handleAPI(args []string) {
+	// Detect HTTP method: default GET, -X PATCH means update.
+	method := "GET"
+	var endpoint string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-X":
+			if i+1 < len(args) {
+				method = args[i+1]
+				i++
+			}
+		case "--paginate", "--jq":
+			// skip flags
+		case "-f":
+			// skip -f key=value
+			i++
+		default:
+			if !strings.HasPrefix(args[i], "-") && endpoint == "" {
+				endpoint = args[i]
+			}
+		}
+	}
+
+	// Detect if this is a comment list, create, or update based on endpoint + method.
+	if strings.Contains(endpoint, "/issues/comments/") && method == "PATCH" {
+		// Update comment
+		fmt.Println(`{}`)
+		return
+	}
+
+	if strings.Contains(endpoint, "/comments") {
+		// Has -f body=... → create; otherwise → list.
+		hasBody := false
+		for _, a := range args {
+			if strings.HasPrefix(a, "body=") {
+				hasBody = true
+				break
+			}
+		}
+		if hasBody {
+			// Create comment
+			fmt.Println(`{"id": 100, "body": "created"}`)
+			return
+		}
+
+		// List comments
+		if os.Getenv("FAKEGH_EXISTING_COMMENT") != "" {
+			fmt.Println(`[{"id": 99, "body": "<!-- frond-stack -->\nold comment"}]`)
+		} else {
+			fmt.Println(`[]`)
+		}
+		return
+	}
+
+	// Default: empty response
+	fmt.Println(`{}`)
+}
+
 func main() {
 	args := os.Args[1:]
 
@@ -40,6 +99,11 @@ func main() {
 		case "edit":
 			// no output
 		}
+		os.Exit(0)
+	}
+
+	if len(args) >= 1 && args[0] == "api" {
+		handleAPI(args[1:])
 		os.Exit(0)
 	}
 
