@@ -2,13 +2,17 @@ package driver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/nvandessel/frond/internal/git"
 )
+
+// submitLineRe matches gt submit output lines: "<branch>: <url> (created|updated)"
+var submitLineRe = regexp.MustCompile(`^(\S+):\s+(https://\S+)\s+\((created|updated)\)$`)
 
 // Graphite delegates stacking operations to the Graphite CLI (gt).
 // It embeds Native and overrides CreateBranch, Push, and Rebase.
@@ -52,16 +56,15 @@ func (g *Graphite) Push(ctx context.Context, opts PushOpts) (*PushResult, error)
 		return nil, fmt.Errorf("gt submit: %s: %w", out, err)
 	}
 
-	// gt submit doesn't return a PR number directly.
 	// For existing PRs, return the existing number.
 	if opts.ExistingPR != nil {
 		return &PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
 	}
 
-	// For new PRs, look up the PR number via gh.
-	prNum, err := lookupPRByBranch(ctx, opts.Branch)
+	// Parse PR number from gt submit output.
+	prNum, err := parsePRNumber(out, opts.Branch)
 	if err != nil {
-		return nil, fmt.Errorf("looking up PR after gt submit: %w", err)
+		return nil, fmt.Errorf("parsing PR number from gt submit output: %w", err)
 	}
 	return &PushResult{PRNumber: prNum, Created: true}, nil
 }
@@ -92,21 +95,28 @@ func runGT(ctx context.Context, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), err
 }
 
-// lookupPRByBranch uses gh to find the PR number for a branch after gt submit.
-func lookupPRByBranch(ctx context.Context, branch string) (int, error) {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", branch, "--json", "number")
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return 0, fmt.Errorf("gh pr view %s: %s: %w", branch, strings.TrimSpace(stderr.String()), err)
+// parsePRNumber extracts the PR number for branch from gt submit output.
+// gt submit prints one line per branch: "<branch>: <url> (created|updated)"
+func parsePRNumber(output, branch string) (int, error) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		matches := submitLineRe.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		if matches[1] != branch {
+			continue
+		}
+		url := matches[2]
+		idx := strings.LastIndex(url, "/")
+		if idx == -1 || idx == len(url)-1 {
+			return 0, fmt.Errorf("malformed PR URL %q: no trailing number", url)
+		}
+		num, err := strconv.Atoi(url[idx+1:])
+		if err != nil {
+			return 0, fmt.Errorf("malformed PR URL %q: %w", url, err)
+		}
+		return num, nil
 	}
-
-	var result struct {
-		Number int `json:"number"`
-	}
-	if err := json.Unmarshal([]byte(stdout.String()), &result); err != nil {
-		return 0, fmt.Errorf("parsing pr view output: %w", err)
-	}
-	return result.Number, nil
+	return 0, fmt.Errorf("branch %q not found in gt submit output:\n%s", branch, output)
 }

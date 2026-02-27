@@ -1,6 +1,9 @@
 package driver
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Mock is a stateful in-memory driver for testing.
 // It tracks branches and current branch so multi-step tests work without git.
@@ -41,6 +44,9 @@ func (m *Mock) CreateBranch(_ context.Context, name, _ string) error {
 }
 
 func (m *Mock) Checkout(_ context.Context, name string) error {
+	if !m.Branches[name] {
+		return fmt.Errorf("branch %q does not exist", name)
+	}
 	m.CurrentBranchName = name
 	return nil
 }
