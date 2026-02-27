@@ -324,6 +324,26 @@ func RenderStackComment(trunk string, branches map[string]BranchInfo, prNumbers 
 	return sb.String()
 }
 
+// RenderMergedStackComment renders a final stack comment for a merged PR.
+// It shows the branch as merged and displays the remaining stack tree.
+func RenderMergedStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, mergedBranch string) string {
+	var sb strings.Builder
+	sb.WriteString("<!-- frond-stack -->\n")
+	sb.WriteString("### 🌴 Frond Stack\n\n")
+	sb.WriteString(fmt.Sprintf("**%s** has been merged. :tada:\n\n", mergedBranch))
+
+	if len(branches) > 0 {
+		tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{})
+		sb.WriteString("Remaining stack:\n")
+		sb.WriteString("```\n")
+		sb.WriteString(tree)
+		sb.WriteString("```\n\n")
+	}
+
+	sb.WriteString("*Managed by [frond](https://github.com/nvandessel/frond)*\n")
+	return sb.String()
+}
+
 // RenderJSON returns the structured data for JSON output.
 func RenderJSON(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int) []JSONBranch {
 	readinessSlice := ComputeReadiness(branches)

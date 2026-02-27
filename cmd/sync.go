@@ -149,6 +149,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	// Step 5e: Update stack comments when merges changed the tree structure.
 	if len(mergedBranches) > 0 {
+		updateMergedComments(ctx, st, mergedData)
 		updateStackComments(ctx, st)
 	}
 
