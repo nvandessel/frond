@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-02-27
+
+### Added
+
+- **Stack comments on PRs** — `frond push` and `frond sync` now post/update a bot-style comment on every PR in the stack showing the full dependency tree with the current PR highlighted (`👈`)
+- `PRCommentList`, `PRCommentCreate`, `PRCommentUpdate` in the `gh` package for GitHub PR comment management
+- `RenderStackComment` in the `dag` package for rendering highlighted stack trees in markdown
+- Floop skill pack (`nvandessel/frond` v0.1.0) with 10 behaviors and 10 edges teaching AI agents stacked PR workflows
+
+### Fixed
+
+- Upgraded codecov action to v5 for tokenless uploads (#56)
+- Restored `CODECOV_TOKEN` for protected branch uploads (#57)
+
+### Changed
+
+- GoReleaser config updated for v2 deprecations (#54, #55)
+- Dependency bumps: `actions/checkout` v6, `actions/setup-go` v6, `goreleaser-action` v7
+
 ## [0.1.0] - 2026-02-23
 
 First release. Minimal, agent-first CLI for managing stacked PRs with DAG dependencies on GitHub.
@@ -22,4 +41,5 @@ First release. Minimal, agent-first CLI for managing stacked PRs with DAG depend
 - Homebrew tap via GoReleaser
 - CI with GitHub Actions on Ubuntu and macOS
 
+[0.2.0]: https://github.com/nvandessel/frond/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nvandessel/frond/releases/tag/v0.1.0
