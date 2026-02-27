@@ -308,14 +308,18 @@ func renderChildren(sb *strings.Builder, node string, children map[string][]stri
 	}
 }
 
+// CommentMarker is the HTML comment used to identify frond stack comments
+// on GitHub PRs. Used by both rendering (here) and upsert detection (cmd).
+const CommentMarker = "<!-- frond-stack -->"
+
 // RenderStackComment renders a full stack comment for a GitHub PR.
-// The highlight parameter marks the current PR's branch with 👈.
+// The highlight parameter marks the current PR's branch with the pointer emoji.
 // Returns a markdown string wrapped with the frond-stack marker.
 func RenderStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, highlight string) string {
 	tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{highlight: highlight})
 
 	var sb strings.Builder
-	sb.WriteString("<!-- frond-stack -->\n")
+	sb.WriteString(CommentMarker + "\n")
 	sb.WriteString("### 🌴 Frond Stack\n\n")
 	sb.WriteString("```\n")
 	sb.WriteString(tree)
@@ -328,7 +332,7 @@ func RenderStackComment(trunk string, branches map[string]BranchInfo, prNumbers 
 // It shows the branch as merged and displays the remaining stack tree.
 func RenderMergedStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, mergedBranch string) string {
 	var sb strings.Builder
-	sb.WriteString("<!-- frond-stack -->\n")
+	sb.WriteString(CommentMarker + "\n")
 	sb.WriteString("### 🌴 Frond Stack\n\n")
 	sb.WriteString(fmt.Sprintf("**%s** has been merged. :tada:\n\n", mergedBranch))
 

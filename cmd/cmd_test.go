@@ -145,6 +145,10 @@ func installFakeGH(t *testing.T, dir string) {
 	}
 
 	t.Setenv("FAKEGH_FAIL", "")
+	t.Setenv("FAKEGH_FAIL_API", "")
+	t.Setenv("FAKEGH_PR_COUNTER", "")
+	t.Setenv("FAKEGH_PR_STATE", "")
+	t.Setenv("FAKEGH_EXISTING_COMMENT", "")
 }
 
 // resetCobraFlags resets all cobra flag values to their defaults so tests
@@ -1370,23 +1374,9 @@ func TestPushSkipsStackCommentForSinglePR(t *testing.T) {
 	}
 }
 
-func TestPushCreatesStackComment(t *testing.T) {
-	dir := setupTestEnv(t)
-
-	recordFile := filepath.Join(dir, "gh_calls.log")
-	t.Setenv("FAKEGH_RECORD", recordFile)
-
-	// Create two tracked branches so the stack has >= 2 PRs.
-	if err := runTier(t, "new", "branch-a"); err != nil {
-		t.Fatalf("frond new branch-a: %v", err)
-	}
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Set up a remote.
+// setupRemote creates a bare remote and adds it as "origin", pushing main.
+func setupRemote(t *testing.T, dir string) {
+	t.Helper()
 	remoteDir := t.TempDir()
 	bareInit := exec.Command("git", "init", "--bare")
 	bareInit.Dir = remoteDir
@@ -1403,8 +1393,36 @@ func TestPushCreatesStackComment(t *testing.T) {
 	if out, err := pushMain.CombinedOutput(); err != nil {
 		t.Fatalf("git push main: %s\n%s", err, out)
 	}
+}
 
-	// Push branch-a to create PR #42.
+// setupPRCounter enables incrementing PR numbers in fakegh and returns
+// the path to the counter file.
+func setupPRCounter(t *testing.T, dir string) {
+	t.Helper()
+	counterFile := filepath.Join(dir, "pr_counter")
+	os.WriteFile(counterFile, []byte("42\n"), 0o644)
+	t.Setenv("FAKEGH_PR_COUNTER", counterFile)
+}
+
+func TestPushCreatesStackComment(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+	setupPRCounter(t, dir)
+	setupRemote(t, dir)
+
+	// Create two tracked branches so the stack has >= 2 PRs.
+	if err := runTier(t, "new", "branch-a"); err != nil {
+		t.Fatalf("frond new branch-a: %v", err)
+	}
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Push branch-a to create PR #42 (single PR, no comments yet).
 	if err := runTier(t, "push"); err != nil {
 		t.Fatalf("frond push branch-a: %v", err)
 	}
@@ -1422,9 +1440,18 @@ func TestPushCreatesStackComment(t *testing.T) {
 	// Clear the record file so we only see calls from this push.
 	os.Remove(recordFile)
 
-	// Push branch-b — now there are 2 PRs, so stack comments should be posted.
+	// Push branch-b — now there are 2 PRs (42 + 43), so stack comments should be posted.
 	if err := runTier(t, "push"); err != nil {
 		t.Fatalf("frond push branch-b: %v", err)
+	}
+
+	// Verify state has distinct PR numbers.
+	s := readState(t, dir)
+	if s.Branches["branch-a"].PR == nil || s.Branches["branch-b"].PR == nil {
+		t.Fatal("both branches should have PR numbers")
+	}
+	if *s.Branches["branch-a"].PR == *s.Branches["branch-b"].PR {
+		t.Errorf("branches should have distinct PR numbers, both got %d", *s.Branches["branch-a"].PR)
 	}
 
 	// Verify gh api calls were made for comment operations.
@@ -1454,6 +1481,8 @@ func TestPushUpdatesStackComment(t *testing.T) {
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
 	t.Setenv("FAKEGH_EXISTING_COMMENT", "1")
+	setupPRCounter(t, dir)
+	setupRemote(t, dir)
 
 	// Create two tracked branches so the stack has >= 2 PRs.
 	if err := runTier(t, "new", "update-branch-a"); err != nil {
@@ -1463,24 +1492,6 @@ func TestPushUpdatesStackComment(t *testing.T) {
 	gitCmd.Dir = dir
 	if out, err := gitCmd.CombinedOutput(); err != nil {
 		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Set up a remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	// Push branch-a to create its PR.
@@ -1518,6 +1529,105 @@ func TestPushUpdatesStackComment(t *testing.T) {
 	}
 	if !hasUpdate {
 		t.Errorf("expected comment update (PATCH) API call, calls: %v", calls)
+	}
+}
+
+func TestPushStackCommentErrorNonFatal(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+	setupPRCounter(t, dir)
+	setupRemote(t, dir)
+
+	// Create two branches with PRs so stack comments are attempted.
+	if err := runTier(t, "new", "err-branch-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push err-branch-a: %v", err)
+	}
+
+	if err := runTier(t, "new", "err-branch-b", "--on", "err-branch-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work on b")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Make only API calls fail — pr view/edit still work.
+	t.Setenv("FAKEGH_FAIL_API", "1")
+
+	// Push should still succeed; comment errors are warnings, not fatal.
+	err := runTier(t, "push")
+	if err != nil {
+		t.Fatalf("push should succeed even when comment API fails: %v", err)
+	}
+}
+
+func TestSyncUpdatesMergedComments(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+	setupPRCounter(t, dir)
+	setupRemote(t, dir)
+
+	// Create two branches with PRs.
+	if err := runTier(t, "new", "merge-branch-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	if err := runTier(t, "new", "merge-branch-b", "--on", "merge-branch-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work on b")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	// Make fakegh report all PRs as MERGED.
+	t.Setenv("FAKEGH_PR_STATE", "MERGED")
+
+	// Clear record to isolate sync calls.
+	os.Remove(recordFile)
+
+	// Sync should detect merges and post merged comments.
+	err := runTier(t, "sync")
+	if err != nil {
+		t.Fatalf("frond sync: %v", err)
+	}
+
+	// Verify comment API calls were made for merged PR comments.
+	calls := readGHCalls(t, recordFile)
+	var hasCommentAPI bool
+	for _, call := range calls {
+		if strings.Contains(call, "api") && strings.Contains(call, "comments") {
+			hasCommentAPI = true
+			break
+		}
+	}
+	if !hasCommentAPI {
+		t.Errorf("expected comment API calls for merged PRs, calls: %v", calls)
 	}
 }
 

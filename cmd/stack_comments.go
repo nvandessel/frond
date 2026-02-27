@@ -11,8 +11,6 @@ import (
 	"github.com/nvandessel/frond/internal/state"
 )
 
-const commentMarker = "<!-- frond-stack -->"
-
 // countPRs returns how many branches have a non-nil PR number.
 func countPRs(branches map[string]state.Branch) int {
 	n := 0
@@ -94,7 +92,7 @@ func upsertComment(ctx context.Context, prNumber int, body string) error {
 	}
 
 	for _, c := range comments {
-		if strings.Contains(c.Body, commentMarker) {
+		if strings.Contains(c.Body, dag.CommentMarker) {
 			return gh.PRCommentUpdate(ctx, c.ID, body)
 		}
 	}

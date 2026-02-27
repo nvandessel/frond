@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -132,7 +133,9 @@ type Comment struct {
 }
 
 // PRCommentList returns all comments on a pull request.
-// Uses --paginate to handle PRs with many comments.
+// Uses --paginate to handle PRs with many comments. The gh CLI outputs each
+// page as a separate JSON array when paginating, so we decode them one at a
+// time and merge into a single slice.
 func PRCommentList(ctx context.Context, prNumber int) ([]Comment, error) {
 	out, err := run(ctx, "api", "--paginate",
 		fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", prNumber))
@@ -144,8 +147,16 @@ func PRCommentList(ctx context.Context, prNumber int) ([]Comment, error) {
 	}
 
 	var comments []Comment
-	if err := json.Unmarshal([]byte(out), &comments); err != nil {
-		return nil, fmt.Errorf("parsing comment list: %w", err)
+	dec := json.NewDecoder(strings.NewReader(out))
+	for {
+		var page []Comment
+		if err := dec.Decode(&page); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("parsing comment list: %w", err)
+		}
+		comments = append(comments, page...)
 	}
 	return comments, nil
 }

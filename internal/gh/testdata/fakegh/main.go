@@ -5,12 +5,37 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
+// nextPRNumber returns an incrementing PR number when FAKEGH_PR_COUNTER is
+// set to a file path, otherwise defaults to 42 for backward compatibility.
+func nextPRNumber() int {
+	counterFile := os.Getenv("FAKEGH_PR_COUNTER")
+	if counterFile == "" {
+		return 42
+	}
+	n := 42
+	data, err := os.ReadFile(counterFile)
+	if err == nil {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+			n = parsed
+		}
+	}
+	os.WriteFile(counterFile, []byte(strconv.Itoa(n+1)+"\n"), 0o644) //nolint:errcheck
+	return n
+}
+
 // handleAPI handles "gh api" subcommands for comment operations.
 func handleAPI(args []string) {
-	// Detect HTTP method: default GET, -X PATCH means update.
+	// Fail mode for API-only: if FAKEGH_FAIL_API is set, exit non-zero.
+	if os.Getenv("FAKEGH_FAIL_API") != "" {
+		fmt.Fprintln(os.Stderr, "fatal: API request failed")
+		os.Exit(1)
+	}
+
+	// Parse flags: detect HTTP method and endpoint.
 	method := "GET"
 	var endpoint string
 	for i := 0; i < len(args); i++ {
@@ -32,15 +57,15 @@ func handleAPI(args []string) {
 		}
 	}
 
-	// Detect if this is a comment list, create, or update based on endpoint + method.
+	// Update comment: PATCH to /issues/comments/{id}.
 	if strings.Contains(endpoint, "/issues/comments/") && method == "PATCH" {
-		// Update comment
 		fmt.Println(`{}`)
 		return
 	}
 
+	// Comment operations on /issues/{n}/comments.
 	if strings.Contains(endpoint, "/comments") {
-		// Has -f body=... → create; otherwise → list.
+		// Presence of -f body=... distinguishes create from list.
 		hasBody := false
 		for _, a := range args {
 			if strings.HasPrefix(a, "body=") {
@@ -49,12 +74,11 @@ func handleAPI(args []string) {
 			}
 		}
 		if hasBody {
-			// Create comment
 			fmt.Println(`{"id": 100, "body": "created"}`)
 			return
 		}
 
-		// List comments
+		// List comments.
 		if os.Getenv("FAKEGH_EXISTING_COMMENT") != "" {
 			fmt.Println(`[{"id": 99, "body": "<!-- frond-stack -->\nold comment"}]`)
 		} else {
@@ -63,7 +87,7 @@ func handleAPI(args []string) {
 		return
 	}
 
-	// Default: empty response
+	// Default: empty response.
 	fmt.Println(`{}`)
 }
 
@@ -93,9 +117,19 @@ func main() {
 	if len(args) >= 2 && args[0] == "pr" {
 		switch args[1] {
 		case "create":
-			fmt.Println("https://github.com/test/repo/pull/42")
+			n := nextPRNumber()
+			fmt.Printf("https://github.com/test/repo/pull/%d\n", n)
 		case "view":
-			fmt.Println(`{"number": 42, "state": "OPEN", "baseRefName": "main"}`)
+			// Parse the requested PR number from args.
+			prNum := "42"
+			if len(args) > 2 && !strings.HasPrefix(args[2], "-") {
+				prNum = args[2]
+			}
+			prState := "OPEN"
+			if s := os.Getenv("FAKEGH_PR_STATE"); s != "" {
+				prState = s
+			}
+			fmt.Printf("{\"number\": %s, \"state\": \"%s\", \"baseRefName\": \"main\"}\n", prNum, prState)
 		case "edit":
 			// no output
 		}
