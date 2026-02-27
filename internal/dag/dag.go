@@ -223,9 +223,18 @@ func shortName(name string) string {
 	return name
 }
 
+// renderOpts controls optional rendering behavior.
+type renderOpts struct {
+	highlight string // branch name to mark with 👈
+}
+
 // RenderTree renders an ASCII tree showing the branch hierarchy based on
 // parent relationships. Annotations include PR numbers and readiness status.
 func RenderTree(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo) string {
+	return renderTree(trunk, branches, prNumbers, readiness, renderOpts{})
+}
+
+func renderTree(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, opts renderOpts) string {
 	// Build children map from parent relationships
 	children := make(map[string][]string)
 	for name, info := range branches {
@@ -241,12 +250,12 @@ func RenderTree(trunk string, branches map[string]BranchInfo, prNumbers map[stri
 	sb.WriteString(trunk)
 	sb.WriteString("\n")
 
-	renderChildren(&sb, trunk, children, prNumbers, readiness, "")
+	renderChildren(&sb, trunk, children, prNumbers, readiness, "", opts)
 
 	return sb.String()
 }
 
-func renderChildren(sb *strings.Builder, node string, children map[string][]string, prNumbers map[string]*int, readiness map[string]ReadinessInfo, prefix string) {
+func renderChildren(sb *strings.Builder, node string, children map[string][]string, prNumbers map[string]*int, readiness map[string]ReadinessInfo, prefix string, opts renderOpts) {
 	kids := children[node]
 	for i, child := range kids {
 		isLast := i == len(kids)-1
@@ -267,6 +276,11 @@ func renderChildren(sb *strings.Builder, node string, children map[string][]stri
 			} else {
 				sb.WriteString("  (not pushed)")
 			}
+		}
+
+		// Highlight marker
+		if opts.highlight != "" && child == opts.highlight {
+			sb.WriteString("  👈")
 		}
 
 		// Readiness
@@ -290,8 +304,48 @@ func renderChildren(sb *strings.Builder, node string, children map[string][]stri
 		if isLast {
 			childPrefix = prefix + "    "
 		}
-		renderChildren(sb, child, children, prNumbers, readiness, childPrefix)
+		renderChildren(sb, child, children, prNumbers, readiness, childPrefix, opts)
 	}
+}
+
+// CommentMarker is the HTML comment used to identify frond stack comments
+// on GitHub PRs. Used by both rendering (here) and upsert detection (cmd).
+const CommentMarker = "<!-- frond-stack -->"
+
+// RenderStackComment renders a full stack comment for a GitHub PR.
+// The highlight parameter marks the current PR's branch with the pointer emoji.
+// Returns a markdown string wrapped with the frond-stack marker.
+func RenderStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, highlight string) string {
+	tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{highlight: highlight})
+
+	var sb strings.Builder
+	sb.WriteString(CommentMarker + "\n")
+	sb.WriteString("### 🌴 Frond Stack\n\n")
+	sb.WriteString("```\n")
+	sb.WriteString(tree)
+	sb.WriteString("```\n\n")
+	sb.WriteString("*Managed by [frond](https://github.com/nvandessel/frond)*\n")
+	return sb.String()
+}
+
+// RenderMergedStackComment renders a final stack comment for a merged PR.
+// It shows the branch as merged and displays the remaining stack tree.
+func RenderMergedStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, mergedBranch string) string {
+	var sb strings.Builder
+	sb.WriteString(CommentMarker + "\n")
+	sb.WriteString("### 🌴 Frond Stack\n\n")
+	sb.WriteString(fmt.Sprintf("**%s** has been merged. :tada:\n\n", mergedBranch))
+
+	if len(branches) > 0 {
+		tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{})
+		sb.WriteString("Remaining stack:\n")
+		sb.WriteString("```\n")
+		sb.WriteString(tree)
+		sb.WriteString("```\n\n")
+	}
+
+	sb.WriteString("*Managed by [frond](https://github.com/nvandessel/frond)*\n")
+	return sb.String()
 }
 
 // RenderJSON returns the structured data for JSON output.

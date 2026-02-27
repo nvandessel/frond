@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -122,6 +123,57 @@ func PRView(ctx context.Context, prNumber int) (*PRInfo, error) {
 // PREdit updates the base branch of a pull request.
 func PREdit(ctx context.Context, prNumber int, newBase string) error {
 	_, err := run(ctx, "pr", "edit", strconv.Itoa(prNumber), "--base", newBase)
+	return err
+}
+
+// Comment holds metadata about a PR/issue comment.
+type Comment struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+}
+
+// PRCommentList returns all comments on a pull request.
+// Uses --paginate to handle PRs with many comments. The gh CLI outputs each
+// page as a separate JSON array when paginating, so we decode them one at a
+// time and merge into a single slice.
+func PRCommentList(ctx context.Context, prNumber int) ([]Comment, error) {
+	out, err := run(ctx, "api", "--paginate",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", prNumber))
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out) == "" {
+		return nil, nil
+	}
+
+	var comments []Comment
+	dec := json.NewDecoder(strings.NewReader(out))
+	for {
+		var page []Comment
+		if err := dec.Decode(&page); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("parsing comment list: %w", err)
+		}
+		comments = append(comments, page...)
+	}
+	return comments, nil
+}
+
+// PRCommentCreate creates a new comment on a pull request.
+func PRCommentCreate(ctx context.Context, prNumber int, body string) error {
+	_, err := run(ctx, "api",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", prNumber),
+		"-f", "body="+body)
+	return err
+}
+
+// PRCommentUpdate updates an existing comment by ID.
+func PRCommentUpdate(ctx context.Context, commentID int, body string) error {
+	_, err := run(ctx, "api", "-X", "PATCH",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", commentID),
+		"-f", "body="+body)
 	return err
 }
 

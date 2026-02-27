@@ -652,6 +652,171 @@ func TestRenderJSON_BlockedByComputed(t *testing.T) {
 	}
 }
 
+// ─── RenderStackComment Tests ───────────────────────────────────────────────
+
+func TestRenderStackComment_SingleBranch(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"feature/x": {Parent: "main"},
+	}
+	prNumbers := map[string]*int{
+		"feature/x": intPtr(10),
+	}
+	readiness := map[string]ReadinessInfo{
+		"feature/x": {Name: "feature/x", Ready: true},
+	}
+
+	result := RenderStackComment("main", branches, prNumbers, readiness, "feature/x")
+
+	if !strings.Contains(result, "<!-- frond-stack -->") {
+		t.Error("missing frond-stack marker")
+	}
+	if !strings.Contains(result, "### 🌴 Frond Stack") {
+		t.Error("missing header")
+	}
+	if !strings.Contains(result, "feature/x  #10  👈") {
+		t.Errorf("missing highlight on feature/x:\n%s", result)
+	}
+	if !strings.Contains(result, "[ready]") {
+		t.Error("missing [ready] annotation")
+	}
+	if !strings.Contains(result, "Managed by [frond]") {
+		t.Error("missing footer")
+	}
+}
+
+func TestRenderStackComment_MultiBranch(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"feature/payments":  {Parent: "main"},
+		"pay/stripe-client": {Parent: "feature/payments"},
+		"pay/stripe-tests":  {Parent: "pay/stripe-client"},
+		"pay/api-handlers":  {Parent: "feature/payments"},
+	}
+	prNumbers := map[string]*int{
+		"feature/payments":  intPtr(10),
+		"pay/stripe-client": intPtr(11),
+		"pay/stripe-tests":  intPtr(12),
+		"pay/api-handlers":  nil,
+	}
+	readiness := map[string]ReadinessInfo{
+		"feature/payments":  {Name: "feature/payments", Ready: true},
+		"pay/stripe-client": {Name: "pay/stripe-client", Ready: true},
+		"pay/stripe-tests":  {Name: "pay/stripe-tests", Ready: true},
+		"pay/api-handlers": {
+			Name:      "pay/api-handlers",
+			Ready:     false,
+			BlockedBy: []string{"pay/stripe-client"},
+		},
+	}
+
+	result := RenderStackComment("main", branches, prNumbers, readiness, "pay/stripe-client")
+
+	// Highlight should be on stripe-client, not others.
+	if !strings.Contains(result, "pay/stripe-client  #11  👈") {
+		t.Errorf("missing highlight on pay/stripe-client:\n%s", result)
+	}
+	// Other branches should NOT have the highlight.
+	if strings.Contains(result, "feature/payments  #10  👈") {
+		t.Error("feature/payments should not be highlighted")
+	}
+	if strings.Contains(result, "pay/stripe-tests  #12  👈") {
+		t.Error("pay/stripe-tests should not be highlighted")
+	}
+	// api-handlers should show (not pushed) and blocked.
+	if !strings.Contains(result, "(not pushed)") {
+		t.Errorf("missing (not pushed) for api-handlers:\n%s", result)
+	}
+	if !strings.Contains(result, "[blocked: stripe-client]") {
+		t.Errorf("missing blocked annotation:\n%s", result)
+	}
+}
+
+func TestRenderStackComment_NoHighlight(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"feature/x": {Parent: "main"},
+	}
+	prNumbers := map[string]*int{
+		"feature/x": intPtr(10),
+	}
+	readiness := map[string]ReadinessInfo{
+		"feature/x": {Name: "feature/x", Ready: true},
+	}
+
+	result := RenderStackComment("main", branches, prNumbers, readiness, "")
+
+	if strings.Contains(result, "👈") {
+		t.Error("no branch should be highlighted with empty highlight")
+	}
+}
+
+func TestRenderMergedStackComment(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"pay/stripe-tests": {Parent: "main"},
+	}
+	prNumbers := map[string]*int{
+		"pay/stripe-tests": intPtr(12),
+	}
+	readiness := map[string]ReadinessInfo{
+		"pay/stripe-tests": {Name: "pay/stripe-tests", Ready: true},
+	}
+
+	result := RenderMergedStackComment("main", branches, prNumbers, readiness, "pay/stripe-client")
+
+	if !strings.Contains(result, "<!-- frond-stack -->") {
+		t.Error("missing frond-stack marker")
+	}
+	if !strings.Contains(result, "**pay/stripe-client** has been merged") {
+		t.Errorf("missing merged message:\n%s", result)
+	}
+	if !strings.Contains(result, "Remaining stack:") {
+		t.Errorf("missing remaining stack header:\n%s", result)
+	}
+	if !strings.Contains(result, "pay/stripe-tests  #12") {
+		t.Errorf("missing remaining branch in tree:\n%s", result)
+	}
+	// Merged branch should NOT have a highlight.
+	if strings.Contains(result, "👈") {
+		t.Error("merged comment should not have a highlight")
+	}
+}
+
+func TestRenderMergedStackComment_NoRemainingBranches(t *testing.T) {
+	branches := map[string]BranchInfo{}
+	prNumbers := map[string]*int{}
+	readiness := map[string]ReadinessInfo{}
+
+	result := RenderMergedStackComment("main", branches, prNumbers, readiness, "last-branch")
+
+	if !strings.Contains(result, "**last-branch** has been merged") {
+		t.Errorf("missing merged message:\n%s", result)
+	}
+	if strings.Contains(result, "Remaining stack:") {
+		t.Error("should not show remaining stack when no branches left")
+	}
+}
+
+func TestRenderStackComment_MarkerAndCodeFence(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"feat": {Parent: "main"},
+	}
+	prNumbers := map[string]*int{
+		"feat": intPtr(1),
+	}
+	readiness := map[string]ReadinessInfo{
+		"feat": {Name: "feat", Ready: true},
+	}
+
+	result := RenderStackComment("main", branches, prNumbers, readiness, "feat")
+
+	// Verify it starts with the HTML comment marker.
+	if !strings.HasPrefix(result, "<!-- frond-stack -->") {
+		t.Error("result should start with frond-stack marker")
+	}
+	// Verify code fence wraps the tree.
+	if !strings.Contains(result, "```\nmain\n") {
+		t.Errorf("expected code fence around tree:\n%s", result)
+	}
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 func equalSlice(a, b []string) bool {

@@ -330,3 +330,132 @@ func TestGHError_Unwrap(t *testing.T) {
 		t.Fatal("Unwrap() should return the inner error")
 	}
 }
+
+// ─── Comment API Tests ──────────────────────────────────────────────────────
+
+func TestPRCommentList_Empty(t *testing.T) {
+	recordFile := setupFakeGH(t)
+	ctx := context.Background()
+
+	comments, err := PRCommentList(ctx, 42)
+	if err != nil {
+		t.Fatalf("PRCommentList() error: %v", err)
+	}
+	if len(comments) != 0 {
+		t.Fatalf("expected 0 comments, got %d", len(comments))
+	}
+
+	calls := readRecord(t, recordFile)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d: %v", len(calls), calls)
+	}
+	if !strings.Contains(calls[0], "api") || !strings.Contains(calls[0], "comments") {
+		t.Fatalf("expected api comments call, got: %s", calls[0])
+	}
+}
+
+func TestPRCommentList_ExistingComment(t *testing.T) {
+	_ = setupFakeGH(t)
+	t.Setenv("FAKEGH_EXISTING_COMMENT", "1")
+	ctx := context.Background()
+
+	comments, err := PRCommentList(ctx, 42)
+	if err != nil {
+		t.Fatalf("PRCommentList() error: %v", err)
+	}
+	if len(comments) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(comments))
+	}
+	if comments[0].ID != 99 {
+		t.Fatalf("expected comment ID 99, got %d", comments[0].ID)
+	}
+	if !strings.Contains(comments[0].Body, "frond-stack") {
+		t.Fatalf("expected frond-stack marker in body, got: %s", comments[0].Body)
+	}
+}
+
+func TestPRCommentList_Error(t *testing.T) {
+	_ = setupFailingGH(t)
+	ctx := context.Background()
+
+	_, err := PRCommentList(ctx, 42)
+	if err == nil {
+		t.Fatal("PRCommentList() should return error when gh fails")
+	}
+	var ghErr *GHError
+	if !errors.As(err, &ghErr) {
+		t.Fatalf("expected *GHError, got %T: %v", err, err)
+	}
+}
+
+func TestPRCommentCreate(t *testing.T) {
+	recordFile := setupFakeGH(t)
+	ctx := context.Background()
+
+	err := PRCommentCreate(ctx, 42, "hello world")
+	if err != nil {
+		t.Fatalf("PRCommentCreate() error: %v", err)
+	}
+
+	calls := readRecord(t, recordFile)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d: %v", len(calls), calls)
+	}
+	call := calls[0]
+	if !strings.Contains(call, "api") {
+		t.Fatalf("expected 'api' in call, got: %s", call)
+	}
+	if !strings.Contains(call, "body=") {
+		t.Fatalf("expected 'body=' in call, got: %s", call)
+	}
+}
+
+func TestPRCommentCreate_Error(t *testing.T) {
+	_ = setupFailingGH(t)
+	ctx := context.Background()
+
+	err := PRCommentCreate(ctx, 42, "hello")
+	if err == nil {
+		t.Fatal("PRCommentCreate() should return error when gh fails")
+	}
+	var ghErr *GHError
+	if !errors.As(err, &ghErr) {
+		t.Fatalf("expected *GHError, got %T: %v", err, err)
+	}
+}
+
+func TestPRCommentUpdate(t *testing.T) {
+	recordFile := setupFakeGH(t)
+	ctx := context.Background()
+
+	err := PRCommentUpdate(ctx, 99, "updated body")
+	if err != nil {
+		t.Fatalf("PRCommentUpdate() error: %v", err)
+	}
+
+	calls := readRecord(t, recordFile)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d: %v", len(calls), calls)
+	}
+	call := calls[0]
+	if !strings.Contains(call, "-X PATCH") {
+		t.Fatalf("expected '-X PATCH' in call, got: %s", call)
+	}
+	if !strings.Contains(call, "issues/comments/99") {
+		t.Fatalf("expected 'issues/comments/99' in call, got: %s", call)
+	}
+}
+
+func TestPRCommentUpdate_Error(t *testing.T) {
+	_ = setupFailingGH(t)
+	ctx := context.Background()
+
+	err := PRCommentUpdate(ctx, 99, "updated body")
+	if err == nil {
+		t.Fatal("PRCommentUpdate() should return error when gh fails")
+	}
+	var ghErr *GHError
+	if !errors.As(err, &ghErr) {
+		t.Fatalf("expected *GHError, got %T: %v", err, err)
+	}
+}
