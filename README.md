@@ -25,6 +25,25 @@ go install github.com/nvandessel/frond@latest
 
 Requires [git](https://git-scm.com/) and [gh](https://cli.github.com/) (authenticated).
 
+### For floop users
+
+If you use [floop](https://github.com/nvandessel/floop) (AI agent behavior learning), install the frond skill pack for best practices:
+
+```bash
+# Download the pack
+curl -L -o frond.fpack https://github.com/nvandessel/frond/releases/latest/download/nvandessel-frond.fpack
+
+# Install it
+floop pack install frond.fpack
+```
+
+This adds learned behaviors covering:
+- When to use `--on` vs `--after` for dependencies
+- Running `frond sync` at session start
+- Proper branch tracking with `frond track`
+- Exit code handling (0=success, 1=error, 2=conflict)
+- Using `--json` for scripting
+
 ### Shell completions
 
 ```bash
