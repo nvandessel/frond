@@ -226,6 +226,7 @@ func shortName(name string) string {
 // renderOpts controls optional rendering behavior.
 type renderOpts struct {
 	highlight string // branch name to mark with 👈
+	repoURL   string // when set, PR numbers become <a> links
 }
 
 // RenderTree renders an ASCII tree showing the branch hierarchy based on
@@ -272,7 +273,11 @@ func renderChildren(sb *strings.Builder, node string, children map[string][]stri
 		// PR number
 		if prNumbers != nil {
 			if pr, ok := prNumbers[child]; ok && pr != nil {
-				sb.WriteString(fmt.Sprintf("  #%d", *pr))
+				if opts.repoURL != "" {
+					sb.WriteString(fmt.Sprintf("  <a href=\"%s/pull/%d\">#%d</a>", opts.repoURL, *pr, *pr))
+				} else {
+					sb.WriteString(fmt.Sprintf("  #%d", *pr))
+				}
 			} else {
 				sb.WriteString("  (not pushed)")
 			}
@@ -314,34 +319,37 @@ const CommentMarker = "<!-- frond-stack -->"
 
 // RenderStackComment renders a full stack comment for a GitHub PR.
 // The highlight parameter marks the current PR's branch with the pointer emoji.
+// When repoURL is non-empty, PR numbers become clickable <a> links and the
+// tree is wrapped in <pre> tags instead of a code fence.
 // Returns a markdown string wrapped with the frond-stack marker.
-func RenderStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, highlight string) string {
-	tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{highlight: highlight})
+func RenderStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, highlight string, repoURL string) string {
+	tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{highlight: highlight, repoURL: repoURL})
 
 	var sb strings.Builder
 	sb.WriteString(CommentMarker + "\n")
 	sb.WriteString("### 🌴 Frond Stack\n\n")
-	sb.WriteString("```\n")
+	sb.WriteString("<pre>\n")
 	sb.WriteString(tree)
-	sb.WriteString("```\n\n")
+	sb.WriteString("</pre>\n\n")
 	sb.WriteString("*Managed by [frond](https://github.com/nvandessel/frond)*\n")
 	return sb.String()
 }
 
 // RenderMergedStackComment renders a final stack comment for a merged PR.
 // It shows the branch as merged and displays the remaining stack tree.
-func RenderMergedStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, mergedBranch string) string {
+// When repoURL is non-empty, PR numbers become clickable <a> links.
+func RenderMergedStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, mergedBranch string, repoURL string) string {
 	var sb strings.Builder
 	sb.WriteString(CommentMarker + "\n")
 	sb.WriteString("### 🌴 Frond Stack\n\n")
 	sb.WriteString(fmt.Sprintf("**%s** has been merged. :tada:\n\n", mergedBranch))
 
 	if len(branches) > 0 {
-		tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{})
+		tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{repoURL: repoURL})
 		sb.WriteString("Remaining stack:\n")
-		sb.WriteString("```\n")
+		sb.WriteString("<pre>\n")
 		sb.WriteString(tree)
-		sb.WriteString("```\n\n")
+		sb.WriteString("</pre>\n\n")
 	}
 
 	sb.WriteString("*Managed by [frond](https://github.com/nvandessel/frond)*\n")

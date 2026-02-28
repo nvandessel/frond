@@ -665,7 +665,7 @@ func TestRenderStackComment_SingleBranch(t *testing.T) {
 		"feature/x": {Name: "feature/x", Ready: true},
 	}
 
-	result := RenderStackComment("main", branches, prNumbers, readiness, "feature/x")
+	result := RenderStackComment("main", branches, prNumbers, readiness, "feature/x", "https://github.com/owner/repo")
 
 	if !strings.Contains(result, "<!-- frond-stack -->") {
 		t.Error("missing frond-stack marker")
@@ -673,8 +673,8 @@ func TestRenderStackComment_SingleBranch(t *testing.T) {
 	if !strings.Contains(result, "### 🌴 Frond Stack") {
 		t.Error("missing header")
 	}
-	if !strings.Contains(result, "feature/x  #10  👈") {
-		t.Errorf("missing highlight on feature/x:\n%s", result)
+	if !strings.Contains(result, `<a href="https://github.com/owner/repo/pull/10">#10</a>  👈`) {
+		t.Errorf("missing linked+highlighted PR on feature/x:\n%s", result)
 	}
 	if !strings.Contains(result, "[ready]") {
 		t.Error("missing [ready] annotation")
@@ -708,17 +708,17 @@ func TestRenderStackComment_MultiBranch(t *testing.T) {
 		},
 	}
 
-	result := RenderStackComment("main", branches, prNumbers, readiness, "pay/stripe-client")
+	result := RenderStackComment("main", branches, prNumbers, readiness, "pay/stripe-client", "https://github.com/owner/repo")
 
-	// Highlight should be on stripe-client, not others.
-	if !strings.Contains(result, "pay/stripe-client  #11  👈") {
-		t.Errorf("missing highlight on pay/stripe-client:\n%s", result)
+	// Highlight should be on stripe-client with linked PR, not others.
+	if !strings.Contains(result, `<a href="https://github.com/owner/repo/pull/11">#11</a>  👈`) {
+		t.Errorf("missing linked+highlighted PR on pay/stripe-client:\n%s", result)
 	}
 	// Other branches should NOT have the highlight.
-	if strings.Contains(result, "feature/payments  #10  👈") {
+	if strings.Contains(result, "#10</a>  👈") {
 		t.Error("feature/payments should not be highlighted")
 	}
-	if strings.Contains(result, "pay/stripe-tests  #12  👈") {
+	if strings.Contains(result, "#12</a>  👈") {
 		t.Error("pay/stripe-tests should not be highlighted")
 	}
 	// api-handlers should show (not pushed) and blocked.
@@ -741,7 +741,7 @@ func TestRenderStackComment_NoHighlight(t *testing.T) {
 		"feature/x": {Name: "feature/x", Ready: true},
 	}
 
-	result := RenderStackComment("main", branches, prNumbers, readiness, "")
+	result := RenderStackComment("main", branches, prNumbers, readiness, "", "https://github.com/owner/repo")
 
 	if strings.Contains(result, "👈") {
 		t.Error("no branch should be highlighted with empty highlight")
@@ -759,7 +759,7 @@ func TestRenderMergedStackComment(t *testing.T) {
 		"pay/stripe-tests": {Name: "pay/stripe-tests", Ready: true},
 	}
 
-	result := RenderMergedStackComment("main", branches, prNumbers, readiness, "pay/stripe-client")
+	result := RenderMergedStackComment("main", branches, prNumbers, readiness, "pay/stripe-client", "https://github.com/owner/repo")
 
 	if !strings.Contains(result, "<!-- frond-stack -->") {
 		t.Error("missing frond-stack marker")
@@ -770,8 +770,8 @@ func TestRenderMergedStackComment(t *testing.T) {
 	if !strings.Contains(result, "Remaining stack:") {
 		t.Errorf("missing remaining stack header:\n%s", result)
 	}
-	if !strings.Contains(result, "pay/stripe-tests  #12") {
-		t.Errorf("missing remaining branch in tree:\n%s", result)
+	if !strings.Contains(result, `<a href="https://github.com/owner/repo/pull/12">#12</a>`) {
+		t.Errorf("missing linked PR in remaining tree:\n%s", result)
 	}
 	// Merged branch should NOT have a highlight.
 	if strings.Contains(result, "👈") {
@@ -784,7 +784,7 @@ func TestRenderMergedStackComment_NoRemainingBranches(t *testing.T) {
 	prNumbers := map[string]*int{}
 	readiness := map[string]ReadinessInfo{}
 
-	result := RenderMergedStackComment("main", branches, prNumbers, readiness, "last-branch")
+	result := RenderMergedStackComment("main", branches, prNumbers, readiness, "last-branch", "https://github.com/owner/repo")
 
 	if !strings.Contains(result, "**last-branch** has been merged") {
 		t.Errorf("missing merged message:\n%s", result)
@@ -794,7 +794,7 @@ func TestRenderMergedStackComment_NoRemainingBranches(t *testing.T) {
 	}
 }
 
-func TestRenderStackComment_MarkerAndCodeFence(t *testing.T) {
+func TestRenderStackComment_MarkerAndPreTag(t *testing.T) {
 	branches := map[string]BranchInfo{
 		"feat": {Parent: "main"},
 	}
@@ -805,15 +805,44 @@ func TestRenderStackComment_MarkerAndCodeFence(t *testing.T) {
 		"feat": {Name: "feat", Ready: true},
 	}
 
-	result := RenderStackComment("main", branches, prNumbers, readiness, "feat")
+	result := RenderStackComment("main", branches, prNumbers, readiness, "feat", "https://github.com/owner/repo")
 
 	// Verify it starts with the HTML comment marker.
 	if !strings.HasPrefix(result, "<!-- frond-stack -->") {
 		t.Error("result should start with frond-stack marker")
 	}
-	// Verify code fence wraps the tree.
-	if !strings.Contains(result, "```\nmain\n") {
-		t.Errorf("expected code fence around tree:\n%s", result)
+	// Verify <pre> wraps the tree (not code fences).
+	if !strings.Contains(result, "<pre>\nmain\n") {
+		t.Errorf("expected <pre> around tree:\n%s", result)
+	}
+	if strings.Contains(result, "```") {
+		t.Errorf("should not contain code fences:\n%s", result)
+	}
+}
+
+func TestRenderStackComment_EmptyRepoURL(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"feat": {Parent: "main"},
+	}
+	prNumbers := map[string]*int{
+		"feat": intPtr(1),
+	}
+	readiness := map[string]ReadinessInfo{
+		"feat": {Name: "feat", Ready: true},
+	}
+
+	result := RenderStackComment("main", branches, prNumbers, readiness, "feat", "")
+
+	// With empty repoURL, PR numbers should be plain text (no <a> links).
+	if strings.Contains(result, "<a href=") {
+		t.Errorf("should not contain links with empty repoURL:\n%s", result)
+	}
+	if !strings.Contains(result, "feat  #1") {
+		t.Errorf("missing plain PR number:\n%s", result)
+	}
+	// Should still use <pre> tags.
+	if !strings.Contains(result, "<pre>") {
+		t.Errorf("missing <pre> tag:\n%s", result)
 	}
 }
 
