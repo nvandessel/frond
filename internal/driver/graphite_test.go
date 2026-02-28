@@ -5,33 +5,37 @@ import (
 	"testing"
 )
 
-func TestParsePRNumber(t *testing.T) {
+func TestParseSubmitResult(t *testing.T) {
 	tests := []struct {
-		name    string
-		output  string
-		branch  string
-		want    int
-		wantErr string
+		name        string
+		output      string
+		branch      string
+		wantPR      int
+		wantCreated bool
+		wantErr     string
 	}{
 		{
-			name:   "created on .com domain",
-			output: "my-feature: https://app.graphite.com/github/pr/owner/repo/42 (created)",
-			branch: "my-feature",
-			want:   42,
+			name:        "created on .com domain",
+			output:      "my-feature: https://app.graphite.com/github/pr/owner/repo/42 (created)",
+			branch:      "my-feature",
+			wantPR:      42,
+			wantCreated: true,
 		},
 		{
-			name:   "updated on .dev domain",
-			output: "my-feature: https://app.graphite.dev/github/pr/owner/repo/99 (updated)",
-			branch: "my-feature",
-			want:   99,
+			name:        "updated on .dev domain",
+			output:      "my-feature: https://app.graphite.dev/github/pr/owner/repo/99 (updated)",
+			branch:      "my-feature",
+			wantPR:      99,
+			wantCreated: false,
 		},
 		{
 			name: "multi-branch stack matches correct branch",
 			output: `pp--06-14-part_1: https://app.graphite.com/github/pr/withgraphite/repo/100 (created)
 pp--06-14-part_2: https://app.graphite.com/github/pr/withgraphite/repo/101 (created)
 pp--06-14-part_3: https://app.graphite.com/github/pr/withgraphite/repo/102 (created)`,
-			branch: "pp--06-14-part_2",
-			want:   101,
+			branch:      "pp--06-14-part_2",
+			wantPR:      101,
+			wantCreated: true,
 		},
 		{
 			name:    "branch not found",
@@ -55,7 +59,7 @@ pp--06-14-part_3: https://app.graphite.com/github/pr/withgraphite/repo/102 (crea
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parsePRNumber(tt.output, tt.branch)
+			gotPR, gotCreated, err := parseSubmitResult(tt.output, tt.branch)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
@@ -68,8 +72,11 @@ pp--06-14-part_3: https://app.graphite.com/github/pr/withgraphite/repo/102 (crea
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tt.want {
-				t.Errorf("parsePRNumber() = %d, want %d", got, tt.want)
+			if gotPR != tt.wantPR {
+				t.Errorf("prNumber = %d, want %d", gotPR, tt.wantPR)
+			}
+			if gotCreated != tt.wantCreated {
+				t.Errorf("created = %v, want %v", gotCreated, tt.wantCreated)
 			}
 		})
 	}

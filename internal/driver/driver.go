@@ -56,12 +56,19 @@ func (e *RebaseConflictError) Error() string {
 	return fmt.Sprintf("rebase conflict on branch %s: %s", e.Branch, e.Detail)
 }
 
+// PR state constants returned by PRState.
+const (
+	PRStateOpen   = "OPEN"
+	PRStateClosed = "CLOSED"
+	PRStateMerged = "MERGED"
+)
+
 // Resolve returns the Driver for the given driver name.
 // An empty name resolves to the native (git+gh) driver.
 func Resolve(name string) (Driver, error) {
 	switch name {
 	case "", "native":
-		return &Native{}, nil
+		return NewNative()
 	case "graphite":
 		return NewGraphite()
 	default:

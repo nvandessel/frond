@@ -50,6 +50,9 @@ func (g *Graphite) Push(ctx context.Context, opts PushOpts) (*PushResult, error)
 	if opts.Title != "" && opts.ExistingPR == nil {
 		args = append(args, "--title", opts.Title)
 	}
+	if opts.Body != "" && opts.ExistingPR == nil {
+		args = append(args, "--description", opts.Body)
+	}
 
 	out, err := runGT(ctx, args...)
 	if err != nil {
@@ -61,12 +64,12 @@ func (g *Graphite) Push(ctx context.Context, opts PushOpts) (*PushResult, error)
 		return &PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
 	}
 
-	// Parse PR number from gt submit output.
-	prNum, err := parsePRNumber(out, opts.Branch)
+	// Parse PR number and created/updated status from gt submit output.
+	prNum, created, err := parseSubmitResult(out, opts.Branch)
 	if err != nil {
 		return nil, fmt.Errorf("parsing PR number from gt submit output: %w", err)
 	}
-	return &PushResult{PRNumber: prNum, Created: true}, nil
+	return &PushResult{PRNumber: prNum, Created: created}, nil
 }
 
 func (g *Graphite) Rebase(ctx context.Context, _, _ string) error {
@@ -95,9 +98,10 @@ func runGT(ctx context.Context, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), err
 }
 
-// parsePRNumber extracts the PR number for branch from gt submit output.
+// parseSubmitResult extracts the PR number and created/updated status for
+// branch from gt submit output.
 // gt submit prints one line per branch: "<branch>: <url> (created|updated)"
-func parsePRNumber(output, branch string) (int, error) {
+func parseSubmitResult(output, branch string) (prNumber int, created bool, err error) {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		matches := submitLineRe.FindStringSubmatch(line)
@@ -110,13 +114,13 @@ func parsePRNumber(output, branch string) (int, error) {
 		url := matches[2]
 		idx := strings.LastIndex(url, "/")
 		if idx == -1 || idx == len(url)-1 {
-			return 0, fmt.Errorf("malformed PR URL %q: no trailing number", url)
+			return 0, false, fmt.Errorf("malformed PR URL %q: no trailing number", url)
 		}
-		num, err := strconv.Atoi(url[idx+1:])
-		if err != nil {
-			return 0, fmt.Errorf("malformed PR URL %q: %w", url, err)
+		num, parseErr := strconv.Atoi(url[idx+1:])
+		if parseErr != nil {
+			return 0, false, fmt.Errorf("malformed PR URL %q: %w", url, parseErr)
 		}
-		return num, nil
+		return num, matches[3] == "created", nil
 	}
-	return 0, fmt.Errorf("branch %q not found in gt submit output:\n%s", branch, output)
+	return 0, false, fmt.Errorf("branch %q not found in gt submit output:\n%s", branch, output)
 }

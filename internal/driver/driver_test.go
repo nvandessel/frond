@@ -7,6 +7,17 @@ import (
 )
 
 func TestResolveNative(t *testing.T) {
+	_, err := exec.LookPath("gh")
+	if err != nil {
+		// gh not installed — Resolve should fail with a descriptive error.
+		_, resolveErr := Resolve("")
+		if resolveErr == nil {
+			t.Fatal("Resolve('') should fail when gh is not installed")
+		}
+		t.Logf("gh not installed, Resolve error: %v (expected)", resolveErr)
+		return
+	}
+
 	drv, err := Resolve("")
 	if err != nil {
 		t.Fatalf("Resolve empty: %v", err)

@@ -100,7 +100,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "warning: could not check PR #%d for %s: %v\n", *b.PR, name, err)
 			continue
 		}
-		if prState == "MERGED" {
+		if prState == driver.PRStateMerged {
 			mergedBranches = append(mergedBranches, name)
 			mergedData[name] = b
 		}

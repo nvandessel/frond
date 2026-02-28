@@ -12,6 +12,14 @@ import (
 // Native is the default driver using git + gh CLIs directly.
 type Native struct{}
 
+// NewNative validates that gh is installed and returns a Native driver.
+func NewNative() (*Native, error) {
+	if err := gh.Available(); err != nil {
+		return nil, err
+	}
+	return &Native{}, nil
+}
+
 func (n *Native) Name() string { return "native" }
 
 func (n *Native) CurrentBranch(ctx context.Context) (string, error) {
