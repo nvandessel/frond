@@ -152,8 +152,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing state: %w", err)
 	}
 
-	// Step 5e: Update stack comments when merges changed the tree structure.
-	if len(mergedBranches) > 0 {
+	// Step 5e: Update stack comments when merges changed the tree structure
+	// (skip for drivers that manage their own stack visualization).
+	if len(mergedBranches) > 0 && drv.SupportsStackComments() {
 		updateMergedComments(ctx, st, mergedData)
 		updateStackComments(ctx, st)
 	}

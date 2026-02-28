@@ -98,3 +98,5 @@ func (n *Native) PRState(ctx context.Context, prNumber int) (string, error) {
 func (n *Native) RetargetPR(ctx context.Context, prNumber int, newBase string) error {
 	return gh.PREdit(ctx, prNumber, newBase)
 }
+
+func (n *Native) SupportsStackComments() bool { return true }

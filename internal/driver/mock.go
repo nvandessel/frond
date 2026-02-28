@@ -10,6 +10,7 @@ import (
 type Mock struct {
 	Branches          map[string]bool
 	CurrentBranchName string
+	StackComments     bool // whether SupportsStackComments() returns true
 
 	// Override hooks — nil means use default behavior.
 	FetchFn      func(ctx context.Context) error
@@ -85,3 +86,5 @@ func (m *Mock) RetargetPR(ctx context.Context, prNumber int, newBase string) err
 	}
 	return nil
 }
+
+func (m *Mock) SupportsStackComments() bool { return m.StackComments }

@@ -27,6 +27,11 @@ type Driver interface {
 	Rebase(ctx context.Context, onto, branch string) error
 	PRState(ctx context.Context, prNumber int) (string, error)
 	RetargetPR(ctx context.Context, prNumber int, newBase string) error
+
+	// SupportsStackComments reports whether frond should post/update
+	// stack comments on PRs. Drivers like Graphite manage their own
+	// stack visualization, so frond skips comment management for them.
+	SupportsStackComments() bool
 }
 
 // PushOpts configures a push + PR create/update operation.

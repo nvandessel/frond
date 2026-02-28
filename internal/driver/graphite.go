@@ -28,7 +28,8 @@ func NewGraphite() (*Graphite, error) {
 	return &Graphite{}, nil
 }
 
-func (g *Graphite) Name() string { return "graphite" }
+func (g *Graphite) Name() string                { return "graphite" }
+func (g *Graphite) SupportsStackComments() bool { return false }
 
 func (g *Graphite) CreateBranch(ctx context.Context, name, parent string) error {
 	// Checkout parent first, then use gt create.

@@ -113,8 +113,10 @@ func runPush(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 9. Update stack comments on all PRs.
-	updateStackComments(ctx, st)
+	// 9. Update stack comments on all PRs (skip for drivers that manage their own).
+	if drv.SupportsStackComments() {
+		updateStackComments(ctx, st)
+	}
 
 	// 10. Check for unmet --after deps: warn if any are still tracked.
 	if len(br.After) > 0 {

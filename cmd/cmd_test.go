@@ -983,8 +983,9 @@ func TestSyncBlockedBranch(t *testing.T) {
 }
 
 func TestPushSkipsStackCommentForSinglePR(t *testing.T) {
-	_, dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
 	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
@@ -1008,17 +1009,10 @@ func TestPushSkipsStackCommentForSinglePR(t *testing.T) {
 	}
 }
 
-// setupPRCounter configures fakegh to use incrementing PR numbers.
-func setupPRCounter(t *testing.T, dir string) {
-	t.Helper()
-	counterFile := filepath.Join(dir, "pr_counter")
-	os.WriteFile(counterFile, []byte("42\n"), 0o644)
-	t.Setenv("FAKEGH_PR_COUNTER", counterFile)
-}
-
 func TestPushCreatesStackComment(t *testing.T) {
 	mock, dir := setupTestEnv(t)
 	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
@@ -1090,6 +1084,7 @@ func TestPushCreatesStackComment(t *testing.T) {
 func TestPushUpdatesStackComment(t *testing.T) {
 	mock, dir := setupTestEnv(t)
 	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
@@ -1147,6 +1142,7 @@ func TestPushUpdatesStackComment(t *testing.T) {
 func TestPushStackCommentErrorNonFatal(t *testing.T) {
 	mock, dir := setupTestEnv(t)
 	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
@@ -1187,6 +1183,7 @@ func TestPushStackCommentErrorNonFatal(t *testing.T) {
 func TestSyncUpdatesMergedComments(t *testing.T) {
 	mock, dir := setupTestEnv(t)
 	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
@@ -1260,6 +1257,52 @@ func readGHCalls(t *testing.T, recordFile string) []string {
 		return nil
 	}
 	return lines
+}
+
+func TestPushSkipsStackCommentsWhenDriverUnsupported(t *testing.T) {
+	mock, dir := setupTestEnv(t)
+	withFakeGH(t)
+	// StackComments defaults to false, simulating a Graphite-like driver.
+
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+
+	// Use incrementing PR numbers.
+	prCounter := 42
+	mock.PushFn = func(_ context.Context, opts driver.PushOpts) (*driver.PushResult, error) {
+		if opts.ExistingPR != nil {
+			return &driver.PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
+		}
+		n := prCounter
+		prCounter++
+		return &driver.PushResult{PRNumber: n, Created: true}, nil
+	}
+
+	// Create two branches with PRs — enough for stack comments to trigger.
+	if err := runTier(t, "new", "no-comment-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	if err := runTier(t, "new", "no-comment-b", "--on", "no-comment-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+
+	os.Remove(recordFile)
+
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	// With StackComments=false, no comment API calls should be made.
+	calls := readGHCalls(t, recordFile)
+	for _, call := range calls {
+		if strings.Contains(call, "api") && strings.Contains(call, "comments") {
+			t.Errorf("expected no comment API calls with StackComments=false, got: %s", call)
+		}
+	}
 }
 
 func TestNewEmptySyncResult(t *testing.T) {
