@@ -7,8 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/nvandessel/frond/internal/git"
 )
 
 // submitLineRe matches gt submit output lines: "<branch>: <url> (created|updated)"
@@ -33,7 +31,7 @@ func (g *Graphite) SupportsStackComments() bool { return false }
 
 func (g *Graphite) CreateBranch(ctx context.Context, name, parent string) error {
 	// Checkout parent first, then use gt create.
-	if err := git.Checkout(ctx, parent); err != nil {
+	if err := g.Checkout(ctx, parent); err != nil {
 		return fmt.Errorf("checking out parent %s: %w", parent, err)
 	}
 	out, err := runGT(ctx, "create", name)
