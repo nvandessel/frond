@@ -28,7 +28,7 @@ checksum:
 homebrew_casks:
   - repository:
       owner: nvandessel
-      name: homebrew-frond
+      name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/nvandessel/frond
     description: Agent-first CLI for managing stacked PRs
