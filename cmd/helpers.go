@@ -6,8 +6,21 @@ import (
 	"unicode"
 
 	"github.com/nvandessel/frond/internal/dag"
+	"github.com/nvandessel/frond/internal/driver"
 	"github.com/nvandessel/frond/internal/state"
 )
+
+// driverOverride is nil in production; tests set it to inject a mock driver.
+var driverOverride driver.Driver
+
+// resolveDriver returns the active driver. If driverOverride is set (tests),
+// it is returned directly. Otherwise the driver is resolved from state.
+func resolveDriver(st *state.State) (driver.Driver, error) {
+	if driverOverride != nil {
+		return driverOverride, nil
+	}
+	return driver.Resolve(st.Driver)
+}
 
 // validateBranchName checks that a branch name is safe to use with git commands.
 func validateBranchName(name string) error {

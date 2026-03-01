@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/nvandessel/frond/internal/git"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -40,19 +39,25 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("reading state: %w", err)
 	}
 
-	// 3. Resolve branch: arg or current branch
+	// 3. Resolve driver (needed for CurrentBranch if no arg)
+	drv, err := resolveDriver(s)
+	if err != nil {
+		return err
+	}
+
+	// 4. Resolve branch: arg or current branch
 	var name string
 	if len(args) > 0 {
 		name = args[0]
 	} else {
-		current, err := git.CurrentBranch(ctx)
+		current, err := drv.CurrentBranch(ctx)
 		if err != nil {
 			return fmt.Errorf("getting current branch: %w", err)
 		}
 		name = current
 	}
 
-	// 4. Must be tracked
+	// 5. Must be tracked
 	branch, tracked := s.Branches[name]
 	if !tracked {
 		return fmt.Errorf("branch '%s' is not tracked", name)
@@ -60,11 +65,11 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 
 	removedParent := branch.Parent
 
-	// 5. Remove from state.Branches
+	// 6. Remove from state.Branches
 	delete(s.Branches, name)
 
-	// 6. Remove from ALL other branches' after lists
-	// 7. Reparent children: any branch whose parent was this branch -> set parent to this branch's parent
+	// 7. Remove from ALL other branches' after lists
+	// 8. Reparent children: any branch whose parent was this branch -> set parent to this branch's parent
 	var reparented []string
 	var unblocked []string
 
@@ -93,12 +98,12 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 		s.Branches[bName] = b
 	}
 
-	// 8. Write state
+	// 9. Write state
 	if err := state.Write(ctx, s); err != nil {
 		return fmt.Errorf("writing state: %w", err)
 	}
 
-	// 9. Output
+	// 10. Output
 	if jsonOut {
 		if reparented == nil {
 			reparented = []string{}

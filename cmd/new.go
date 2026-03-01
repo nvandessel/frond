@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nvandessel/frond/internal/git"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -51,8 +50,14 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("reading state: %w", err)
 	}
 
+	// 3. Resolve driver
+	drv, err := resolveDriver(s)
+	if err != nil {
+		return err
+	}
+
 	// Check if branch already exists in git
-	exists, err := git.BranchExists(ctx, name)
+	exists, err := drv.BranchExists(ctx, name)
 	if err != nil {
 		return fmt.Errorf("checking branch existence: %w", err)
 	}
@@ -60,13 +65,13 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("branch '%s' already exists. Use 'frond track' to add it", name)
 	}
 
-	// 3. Resolve parent: --on flag -> current branch if tracked -> trunk
+	// 4. Resolve parent: --on flag -> current branch if tracked -> trunk
 	onFlag, _ := cmd.Flags().GetString("on")
 	parent := s.Trunk
 	if onFlag != "" {
 		parent = onFlag
 	} else {
-		current, err := git.CurrentBranch(ctx)
+		current, err := drv.CurrentBranch(ctx)
 		if err == nil {
 			if _, tracked := s.Branches[current]; tracked {
 				parent = current
@@ -74,15 +79,15 @@ func runNew(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 4. Parse --after
+	// 5. Parse --after
 	afterFlag, _ := cmd.Flags().GetString("after")
 	var after []string
 	if afterFlag != "" {
 		after = strings.Split(afterFlag, ",")
 	}
 
-	// 5. Validate parent branch exists in git
-	parentExists, err := git.BranchExists(ctx, parent)
+	// 6. Validate parent branch exists in git
+	parentExists, err := drv.BranchExists(ctx, parent)
 	if err != nil {
 		return fmt.Errorf("checking parent branch: %w", err)
 	}
@@ -90,17 +95,17 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parent branch '%s' does not exist", parent)
 	}
 
-	// 6. Validate --after deps and check for cycles
+	// 7. Validate --after deps and check for cycles
 	if err := validateAfterDeps(s.Branches, name, after); err != nil {
 		return err
 	}
 
-	// 7. git.CreateBranch (also checks it out)
-	if err := git.CreateBranch(ctx, name, parent); err != nil {
+	// 8. Create branch (also checks it out)
+	if err := drv.CreateBranch(ctx, name, parent); err != nil {
 		return fmt.Errorf("creating branch: %w", err)
 	}
 
-	// 7. Write branch to state.Branches
+	// 9. Write branch to state.Branches
 	if after == nil {
 		after = []string{}
 	}
@@ -109,12 +114,12 @@ func runNew(cmd *cobra.Command, args []string) error {
 		After:  after,
 	}
 
-	// 8. Write state
+	// 10. Write state
 	if err := state.Write(ctx, s); err != nil {
 		return fmt.Errorf("writing state: %w", err)
 	}
 
-	// 9. Output
+	// 11. Output
 	if jsonOut {
 		return printJSON(newResult{
 			Name:   name,

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,67 +11,41 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nvandessel/frond/internal/driver"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/pflag"
 )
 
-// setupTestEnv creates a temp git repo with an initial commit, a fake gh
-// script, and chdir into the repo. It restores state on cleanup.
-func setupTestEnv(t *testing.T) string {
+// setupTestEnv creates a temp directory, overrides GitCommonDir and
+// injects a mock driver. No real git or gh commands are needed.
+func setupTestEnv(t *testing.T) (*driver.Mock, string) {
 	t.Helper()
 
 	dir := t.TempDir()
-
-	gitEnv := []string{
-		"GIT_AUTHOR_NAME=Test User",
-		"GIT_AUTHOR_EMAIL=test@example.com",
-		"GIT_COMMITTER_NAME=Test User",
-		"GIT_COMMITTER_EMAIL=test@example.com",
-		"GIT_CONFIG_NOSYSTEM=1",
-		"HOME=" + dir,
-	}
-
-	// Run git commands in the temp dir.
-	gitCmd := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), gitEnv...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("setup git %s: %s\n%s", strings.Join(args, " "), err, out)
-		}
-	}
-
-	gitCmd("init", "-b", "main")
-	gitCmd("commit", "--allow-empty", "-m", "init")
-
-	// Set env vars for subprocesses.
-	for _, e := range gitEnv {
-		parts := strings.SplitN(e, "=", 2)
-		t.Setenv(parts[0], parts[1])
-	}
-
-	// chdir to the repo.
-	origDir, err := os.Getwd()
-	if err != nil {
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
+
+	orig := state.GitCommonDir
+	state.GitCommonDir = func(_ context.Context) (string, error) { return gitDir, nil }
+	t.Cleanup(func() { state.GitCommonDir = orig })
+
+	mock := driver.NewMock()
+	mock.PushFn = func(_ context.Context, opts driver.PushOpts) (*driver.PushResult, error) {
+		return &driver.PushResult{PRNumber: 42, Created: opts.ExistingPR == nil}, nil
 	}
-	t.Cleanup(func() { os.Chdir(origDir) })
+	mock.PRStateFn = func(_ context.Context, _ int) (string, error) {
+		return "OPEN", nil
+	}
 
-	// Install a fake gh script (platform-appropriate).
-	ghDir := t.TempDir()
-	installFakeGH(t, ghDir)
-	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	driverOverride = mock
+	t.Cleanup(func() { driverOverride = nil })
 
-	// Reset global state and cobra flags between tests.
-	jsonOut = false
 	resetCobraFlags()
+	jsonOut = false
 
-	return dir
+	return mock, dir
 }
 
 // moduleRoot caches the repo root path, found before any test does os.Chdir.
@@ -122,15 +97,17 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// installFakeGH copies the pre-built fakegh binary into the given directory as "gh".
-func installFakeGH(t *testing.T, dir string) {
+// withFakeGH installs the pre-built fakegh binary on PATH for tests that
+// need the gh comment API (e.g., stack comment tests). Call after setupTestEnv.
+func withFakeGH(t *testing.T) {
 	t.Helper()
 
+	ghDir := t.TempDir()
 	binName := "gh"
 	if runtime.GOOS == "windows" {
 		binName = "gh.exe"
 	}
-	dst := filepath.Join(dir, binName)
+	dst := filepath.Join(ghDir, binName)
 
 	// Hard-link (fast) or copy the pre-built binary.
 	if err := os.Link(fakeGHBin, dst); err != nil {
@@ -144,6 +121,7 @@ func installFakeGH(t *testing.T, dir string) {
 		}
 	}
 
+	t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FAKEGH_FAIL", "")
 	t.Setenv("FAKEGH_FAIL_API", "")
 	t.Setenv("FAKEGH_PR_COUNTER", "")
@@ -190,22 +168,19 @@ func runTier(t *testing.T, args ...string) error {
 }
 
 func TestNewCreatesAndTracks(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
 
 	err := runTier(t, "new", "feature-x")
 	if err != nil {
 		t.Fatalf("frond new: %v", err)
 	}
 
-	// Verify git branch was created and checked out.
-	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	branchCmd.Dir = dir
-	out, err := branchCmd.Output()
-	if err != nil {
-		t.Fatalf("git rev-parse: %v", err)
+	// Verify mock branch was created and checked out.
+	if mock.CurrentBranchName != "feature-x" {
+		t.Errorf("current branch = %q, want %q", mock.CurrentBranchName, "feature-x")
 	}
-	if got := strings.TrimSpace(string(out)); got != "feature-x" {
-		t.Errorf("current branch = %q, want %q", got, "feature-x")
+	if !mock.Branches["feature-x"] {
+		t.Error("branch 'feature-x' not created in mock")
 	}
 
 	// Verify frond.json has the branch.
@@ -223,17 +198,15 @@ func TestNewCreatesAndTracks(t *testing.T) {
 }
 
 func TestNewWithOnFlag(t *testing.T) {
-	dir := setupTestEnv(t)
+	_, dir := setupTestEnv(t)
 
 	// Create a first branch.
-	err := runTier(t, "new", "step-1")
-	if err != nil {
+	if err := runTier(t, "new", "step-1"); err != nil {
 		t.Fatalf("frond new step-1: %v", err)
 	}
 
 	// Create a stacked branch on top.
-	err = runTier(t, "new", "step-2", "--on", "step-1")
-	if err != nil {
+	if err := runTier(t, "new", "step-2", "--on", "step-1"); err != nil {
 		t.Fatalf("frond new step-2: %v", err)
 	}
 
@@ -261,21 +234,10 @@ func TestNewDuplicateBranchFails(t *testing.T) {
 }
 
 func TestTrackExistingBranch(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
 
-	// Create a git branch manually (not via frond).
-	gitCmd := exec.Command("git", "checkout", "-b", "existing-branch", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout -b: %s\n%s", err, out)
-	}
-
-	// Switch back to main.
-	gitCmd = exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout main: %s\n%s", err, out)
-	}
+	// Pre-create a branch in the mock (simulates existing git branch).
+	mock.Branches["existing-branch"] = true
 
 	err := runTier(t, "track", "existing-branch", "--on", "main")
 	if err != nil {
@@ -309,7 +271,7 @@ func TestTrackAlreadyTrackedFails(t *testing.T) {
 }
 
 func TestUntrackRemovesBranch(t *testing.T) {
-	dir := setupTestEnv(t)
+	_, dir := setupTestEnv(t)
 
 	// Create two stacked branches.
 	if err := runTier(t, "new", "parent-branch"); err != nil {
@@ -402,7 +364,7 @@ func TestStatusNoStateFails(t *testing.T) {
 }
 
 func TestNewCycleDetection(t *testing.T) {
-	setupTestEnv(t)
+	mock, _ := setupTestEnv(t)
 
 	// Create branch A.
 	if err := runTier(t, "new", "branch-a"); err != nil {
@@ -410,43 +372,15 @@ func TestNewCycleDetection(t *testing.T) {
 	}
 
 	// Create branch B that depends on A.
+	mock.CurrentBranchName = "main"
 	if err := runTier(t, "new", "branch-b", "--on", "main", "--after", "branch-a"); err != nil {
 		t.Fatalf("frond new branch-b: %v", err)
 	}
 
-	// Try to create C with --after=branch-b AND on branch-a, but also adding
-	// a circular dep. Actually, a direct cycle: create C --after=branch-b,
-	// then try to create D --after=C --after=... that forms a cycle.
-	// Simplest cycle: A --after B, B --after A.
-	// B already depends on A. Try creating C --after=branch-b where
-	// branch-b has after=[branch-a], and C has after=[branch-b].
-	// That's not a cycle, just a chain.
+	// Pre-create branch-c in mock so track can find it.
+	mock.Branches["branch-c"] = true
 
-	// For a real cycle: create C that depends on branch-b,
-	// then try to make branch-a depend on C (but we can't modify after post-creation).
-	// Instead: create C --on main --after branch-b, then D --on main --after C,branch-a
-	// This creates: A -> B -> C -> D, D -> A which is a cycle.
-
-	// Simplest approach: branch-b after=[branch-a]. Create branch-c --after=branch-b.
-	// Then create branch-d --after=branch-c,branch-a is NOT a cycle.
-	// We need: create branch-c --after=branch-b, then branch-a --after=branch-c
-	// But branch-a already exists.
-
-	// Use track to add a branch with a cyclic dep.
-	// Create branch-c in git manually.
-	gitCmd := exec.Command("git", "checkout", "-b", "branch-c", "main")
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
-
-	// Try to track branch-c --on main --after=branch-b.
-	// Then try to create branch-a2 that dep on branch-c. No...
-	// Let me just test: create branch-c with --after=branch-a,
-	// where branch-a would need --after=branch-c (cycle).
-	// But since we can't modify existing branches' after lists,
-	// test the simpler case: track branch-c --after branch-a,branch-c → self-cycle.
-
-	// Actually the simplest: self-dependency.
+	// Try self-dependency — should fail.
 	err := runTier(t, "track", "branch-c", "--on", "main", "--after", "branch-c")
 	if err == nil {
 		t.Fatal("expected cycle detection error")
@@ -457,14 +391,14 @@ func TestNewCycleDetection(t *testing.T) {
 }
 
 func TestNewInheritsParentFromCurrentBranch(t *testing.T) {
-	dir := setupTestEnv(t)
+	_, dir := setupTestEnv(t)
 
 	// Create first branch.
 	if err := runTier(t, "new", "base-feature"); err != nil {
 		t.Fatalf("frond new base-feature: %v", err)
 	}
 
-	// We're now on base-feature. Create another without --on.
+	// We're now on base-feature (mock auto-checks out). Create another without --on.
 	// It should inherit base-feature as parent.
 	if err := runTier(t, "new", "sub-feature"); err != nil {
 		t.Fatalf("frond new sub-feature: %v", err)
@@ -478,40 +412,16 @@ func TestNewInheritsParentFromCurrentBranch(t *testing.T) {
 }
 
 func TestPushCreatesNewPR(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
 
-	// Create a tracked branch with a commit.
+	// Create a tracked branch.
 	if err := runTier(t, "new", "pr-branch"); err != nil {
 		t.Fatalf("frond new: %v", err)
 	}
 
-	// Add a commit so push has something.
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "feature work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Push needs a remote. Create a bare remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-
-	// Add the bare repo as "origin".
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-
-	// Push main first so origin has a "main" branch.
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
+	// Ensure we're on the branch.
+	if mock.CurrentBranchName != "pr-branch" {
+		t.Fatalf("expected current branch pr-branch, got %s", mock.CurrentBranchName)
 	}
 
 	err := runTier(t, "push")
@@ -553,30 +463,11 @@ func TestRemoveFromSlice(t *testing.T) {
 }
 
 func TestSyncNothingToDo(t *testing.T) {
-	dir := setupTestEnv(t)
+	setupTestEnv(t)
 
 	// Create a tracked branch.
 	if err := runTier(t, "new", "sync-branch"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-
-	// Set up a remote so fetch works.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	// Push main so origin has it.
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	// Sync should succeed with "already up to date".
@@ -606,7 +497,7 @@ func TestHumanizeTitle(t *testing.T) {
 }
 
 func TestPushUntrackedBranchFails(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, _ := setupTestEnv(t)
 
 	// Initialize state by creating one branch.
 	if err := runTier(t, "new", "tracked-one"); err != nil {
@@ -614,11 +505,8 @@ func TestPushUntrackedBranchFails(t *testing.T) {
 	}
 
 	// Switch to an untracked branch.
-	gitCmd := exec.Command("git", "checkout", "-b", "untracked-branch")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
+	mock.Branches["untracked-branch"] = true
+	mock.CurrentBranchName = "untracked-branch"
 
 	err := runTier(t, "push")
 	if err == nil {
@@ -684,28 +572,20 @@ func TestNewWithJSONOutput(t *testing.T) {
 }
 
 func TestNewWithAfterDeps(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
 
 	// Create two branches.
 	if err := runTier(t, "new", "dep-a"); err != nil {
 		t.Fatalf("frond new dep-a: %v", err)
 	}
 	// Go back to main so next new defaults to main.
-	gitCmd := exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
+	mock.CurrentBranchName = "main"
 	if err := runTier(t, "new", "dep-b"); err != nil {
 		t.Fatalf("frond new dep-b: %v", err)
 	}
 
 	// Go back to main.
-	gitCmd = exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
+	mock.CurrentBranchName = "main"
 
 	// Create a branch with --after deps.
 	if err := runTier(t, "new", "dep-c", "--on", "main", "--after", "dep-a,dep-b"); err != nil {
@@ -722,7 +602,6 @@ func TestNewWithAfterDeps(t *testing.T) {
 func TestNewInvalidBranchName(t *testing.T) {
 	setupTestEnv(t)
 
-	// Branch name with ".." is invalid and gets past cobra flag parsing.
 	err := runTier(t, "new", "a..b")
 	if err == nil {
 		t.Fatal("expected error for branch name with '..'")
@@ -757,19 +636,10 @@ func TestNewAfterDepNotTracked(t *testing.T) {
 }
 
 func TestTrackWithJSONOutput(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, _ := setupTestEnv(t)
 
-	// Create a branch in git manually.
-	gitCmd := exec.Command("git", "checkout", "-b", "json-track", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
-	gitCmd = exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
+	// Pre-create branch in mock.
+	mock.Branches["json-track"] = true
 
 	err := runTier(t, "track", "json-track", "--on", "main", "--json")
 	if err != nil {
@@ -815,7 +685,7 @@ func TestUntrackWithJSONOutput(t *testing.T) {
 }
 
 func TestUntrackCurrentBranch(t *testing.T) {
-	dir := setupTestEnv(t)
+	_, dir := setupTestEnv(t)
 
 	// Create and stay on the branch.
 	if err := runTier(t, "new", "current-br"); err != nil {
@@ -835,7 +705,7 @@ func TestUntrackCurrentBranch(t *testing.T) {
 }
 
 func TestUntrackWithDepsAndChildren(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
 
 	// Create parent -> child chain with deps.
 	if err := runTier(t, "new", "mid-branch"); err != nil {
@@ -845,11 +715,7 @@ func TestUntrackWithDepsAndChildren(t *testing.T) {
 		t.Fatalf("frond new child-a: %v", err)
 	}
 	// Go back to main, create another that depends on mid-branch.
-	gitCmd := exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
+	mock.CurrentBranchName = "main"
 	if err := runTier(t, "new", "dep-on-mid", "--on", "main", "--after", "mid-branch"); err != nil {
 		t.Fatalf("frond new dep-on-mid: %v", err)
 	}
@@ -905,35 +771,11 @@ func TestCompletionInvalidShell(t *testing.T) {
 }
 
 func TestPushExistingPRUpdates(t *testing.T) {
-	dir := setupTestEnv(t)
+	_, dir := setupTestEnv(t)
 
-	// Create a tracked branch with a commit.
+	// Create a tracked branch.
 	if err := runTier(t, "new", "update-pr-branch"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Set up remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	// First push creates a PR.
@@ -941,48 +783,25 @@ func TestPushExistingPRUpdates(t *testing.T) {
 		t.Fatalf("first push: %v", err)
 	}
 
-	// Add another commit.
-	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "more work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
 	// Second push should update the existing PR (not create new).
 	err := runTier(t, "push")
 	if err != nil {
 		t.Fatalf("second push (update): %v", err)
 	}
+
+	// PR number should still be 42.
+	s := readState(t, dir)
+	b := s.Branches["update-pr-branch"]
+	if b.PR == nil || *b.PR != 42 {
+		t.Errorf("PR = %v, want 42", b.PR)
+	}
 }
 
 func TestPushWithTitleAndDraft(t *testing.T) {
-	dir := setupTestEnv(t)
+	setupTestEnv(t)
 
 	if err := runTier(t, "new", "draft-branch"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	err := runTier(t, "push", "-t", "My Custom Title", "--draft")
@@ -992,33 +811,10 @@ func TestPushWithTitleAndDraft(t *testing.T) {
 }
 
 func TestPushWithJSONOutput(t *testing.T) {
-	dir := setupTestEnv(t)
+	setupTestEnv(t)
 
 	if err := runTier(t, "new", "json-push"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	err := runTier(t, "push", "--json")
@@ -1028,7 +824,7 @@ func TestPushWithJSONOutput(t *testing.T) {
 }
 
 func TestSyncNoBranches(t *testing.T) {
-	dir := setupTestEnv(t)
+	setupTestEnv(t)
 
 	// Create a branch and immediately untrack it so state exists but has no branches.
 	if err := runTier(t, "new", "temp-branch"); err != nil {
@@ -1036,24 +832,6 @@ func TestSyncNoBranches(t *testing.T) {
 	}
 	if err := runTier(t, "untrack", "temp-branch"); err != nil {
 		t.Fatalf("frond untrack: %v", err)
-	}
-
-	// Set up remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	// Sync with no branches should say "nothing to sync".
@@ -1064,30 +842,13 @@ func TestSyncNoBranches(t *testing.T) {
 }
 
 func TestSyncNoBranchesJSON(t *testing.T) {
-	dir := setupTestEnv(t)
+	setupTestEnv(t)
 
 	if err := runTier(t, "new", "temp-branch"); err != nil {
 		t.Fatalf("frond new: %v", err)
 	}
 	if err := runTier(t, "untrack", "temp-branch"); err != nil {
 		t.Fatalf("frond untrack: %v", err)
-	}
-
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	err := runTier(t, "sync", "--json")
@@ -1097,51 +858,14 @@ func TestSyncNoBranchesJSON(t *testing.T) {
 }
 
 func TestSyncRebasesTrackedBranch(t *testing.T) {
-	dir := setupTestEnv(t)
+	setupTestEnv(t)
 
 	// Create tracked branch.
 	if err := runTier(t, "new", "rebase-me"); err != nil {
 		t.Fatalf("frond new: %v", err)
 	}
 
-	// Add a commit on the feature branch.
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "feature work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Go back to main and add a commit.
-	gitCmd = exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
-	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "main advance")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Set up remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
-	}
-
-	// Sync should rebase rebase-me onto main.
+	// Sync should rebase rebase-me onto main (mock rebase is no-op).
 	err := runTier(t, "sync")
 	if err != nil {
 		t.Fatalf("frond sync: %v", err)
@@ -1149,27 +873,10 @@ func TestSyncRebasesTrackedBranch(t *testing.T) {
 }
 
 func TestSyncWithJSONOutput(t *testing.T) {
-	dir := setupTestEnv(t)
+	setupTestEnv(t)
 
 	if err := runTier(t, "new", "sync-json"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	err := runTier(t, "sync", "--json")
@@ -1179,7 +886,7 @@ func TestSyncWithJSONOutput(t *testing.T) {
 }
 
 func TestStatusWithPRStates(t *testing.T) {
-	dir := setupTestEnv(t)
+	_, dir := setupTestEnv(t)
 
 	// Create a tracked branch and manually set a PR number.
 	if err := runTier(t, "new", "pr-status"); err != nil {
@@ -1200,7 +907,7 @@ func TestStatusWithPRStates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Status with --fetch should exercise fetchPRStates and outputHuman with prStates.
+	// Status with --fetch should exercise fetchPRStates.
 	err = runTier(t, "status", "--fetch")
 	if err != nil {
 		t.Fatalf("frond status --fetch: %v", err)
@@ -1208,7 +915,7 @@ func TestStatusWithPRStates(t *testing.T) {
 }
 
 func TestStatusFetchJSON(t *testing.T) {
-	dir := setupTestEnv(t)
+	_, dir := setupTestEnv(t)
 
 	if err := runTier(t, "new", "pr-json-status"); err != nil {
 		t.Fatalf("frond new: %v", err)
@@ -1236,45 +943,17 @@ func TestStatusFetchJSON(t *testing.T) {
 }
 
 func TestPushWithUnmetDeps(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, _ := setupTestEnv(t)
 
 	// Create dep and dependent branches.
 	if err := runTier(t, "new", "dep-branch"); err != nil {
 		t.Fatalf("frond new dep-branch: %v", err)
 	}
 
-	gitCmd := exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
+	mock.CurrentBranchName = "main"
 
 	if err := runTier(t, "new", "with-deps", "--on", "main", "--after", "dep-branch"); err != nil {
 		t.Fatalf("frond new with-deps: %v", err)
-	}
-
-	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Set up remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	// Push should succeed but warn about unmet deps.
@@ -1285,37 +964,15 @@ func TestPushWithUnmetDeps(t *testing.T) {
 }
 
 func TestSyncBlockedBranch(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, _ := setupTestEnv(t)
 
 	// Create two branches: blocker and blocked.
 	if err := runTier(t, "new", "blocker"); err != nil {
 		t.Fatalf("frond new blocker: %v", err)
 	}
-	gitCmd := exec.Command("git", "checkout", "main")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout: %s\n%s", err, out)
-	}
+	mock.CurrentBranchName = "main"
 	if err := runTier(t, "new", "blocked-br", "--on", "main", "--after", "blocker"); err != nil {
 		t.Fatalf("frond new blocked-br: %v", err)
-	}
-
-	// Set up remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	// Sync should see blocked-br as blocked.
@@ -1326,38 +983,16 @@ func TestSyncBlockedBranch(t *testing.T) {
 }
 
 func TestPushSkipsStackCommentForSinglePR(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
+	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
 
-	// Create a single tracked branch with a commit.
+	// Create a single tracked branch.
 	if err := runTier(t, "new", "solo-branch"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "feature work")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
-
-	// Set up a remote.
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
 	}
 
 	err := runTier(t, "push")
@@ -1374,52 +1009,28 @@ func TestPushSkipsStackCommentForSinglePR(t *testing.T) {
 	}
 }
 
-// setupRemote creates a bare remote and adds it as "origin", pushing main.
-func setupRemote(t *testing.T, dir string) {
-	t.Helper()
-	remoteDir := t.TempDir()
-	bareInit := exec.Command("git", "init", "--bare")
-	bareInit.Dir = remoteDir
-	if out, err := bareInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init --bare: %s\n%s", err, out)
-	}
-	addRemote := exec.Command("git", "remote", "add", "origin", remoteDir)
-	addRemote.Dir = dir
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		t.Fatalf("git remote add: %s\n%s", err, out)
-	}
-	pushMain := exec.Command("git", "push", "origin", "main")
-	pushMain.Dir = dir
-	if out, err := pushMain.CombinedOutput(); err != nil {
-		t.Fatalf("git push main: %s\n%s", err, out)
-	}
-}
-
-// setupPRCounter enables incrementing PR numbers in fakegh and returns
-// the path to the counter file.
-func setupPRCounter(t *testing.T, dir string) {
-	t.Helper()
-	counterFile := filepath.Join(dir, "pr_counter")
-	os.WriteFile(counterFile, []byte("42\n"), 0o644)
-	t.Setenv("FAKEGH_PR_COUNTER", counterFile)
-}
-
 func TestPushCreatesStackComment(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
+	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
-	setupPRCounter(t, dir)
-	setupRemote(t, dir)
+
+	// Use incrementing PR numbers so each push gets a unique PR.
+	prCounter := 42
+	mock.PushFn = func(_ context.Context, opts driver.PushOpts) (*driver.PushResult, error) {
+		if opts.ExistingPR != nil {
+			return &driver.PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
+		}
+		n := prCounter
+		prCounter++
+		return &driver.PushResult{PRNumber: n, Created: true}, nil
+	}
 
 	// Create two tracked branches so the stack has >= 2 PRs.
 	if err := runTier(t, "new", "branch-a"); err != nil {
 		t.Fatalf("frond new branch-a: %v", err)
-	}
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
 	}
 
 	// Push branch-a to create PR #42 (single PR, no comments yet).
@@ -1430,11 +1041,6 @@ func TestPushCreatesStackComment(t *testing.T) {
 	// Create a second stacked branch.
 	if err := runTier(t, "new", "branch-b", "--on", "branch-a"); err != nil {
 		t.Fatalf("frond new branch-b: %v", err)
-	}
-	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work on b")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
 	}
 
 	// Clear the record file so we only see calls from this push.
@@ -1476,22 +1082,28 @@ func TestPushCreatesStackComment(t *testing.T) {
 }
 
 func TestPushUpdatesStackComment(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
+	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
 	t.Setenv("FAKEGH_EXISTING_COMMENT", "1")
-	setupPRCounter(t, dir)
-	setupRemote(t, dir)
+
+	// Use incrementing PR numbers.
+	prCounter := 42
+	mock.PushFn = func(_ context.Context, opts driver.PushOpts) (*driver.PushResult, error) {
+		if opts.ExistingPR != nil {
+			return &driver.PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
+		}
+		n := prCounter
+		prCounter++
+		return &driver.PushResult{PRNumber: n, Created: true}, nil
+	}
 
 	// Create two tracked branches so the stack has >= 2 PRs.
 	if err := runTier(t, "new", "update-branch-a"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
 	}
 
 	// Push branch-a to create its PR.
@@ -1502,11 +1114,6 @@ func TestPushUpdatesStackComment(t *testing.T) {
 	// Create second branch stacked on first.
 	if err := runTier(t, "new", "update-branch-b", "--on", "update-branch-a"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work on b")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
 	}
 
 	// Clear the record file so we only see calls from this push.
@@ -1533,21 +1140,27 @@ func TestPushUpdatesStackComment(t *testing.T) {
 }
 
 func TestPushStackCommentErrorNonFatal(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
+	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
-	setupPRCounter(t, dir)
-	setupRemote(t, dir)
+
+	// Use incrementing PR numbers.
+	prCounter := 42
+	mock.PushFn = func(_ context.Context, opts driver.PushOpts) (*driver.PushResult, error) {
+		if opts.ExistingPR != nil {
+			return &driver.PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
+		}
+		n := prCounter
+		prCounter++
+		return &driver.PushResult{PRNumber: n, Created: true}, nil
+	}
 
 	// Create two branches with PRs so stack comments are attempted.
 	if err := runTier(t, "new", "err-branch-a"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
 	}
 	if err := runTier(t, "push"); err != nil {
 		t.Fatalf("frond push err-branch-a: %v", err)
@@ -1555,11 +1168,6 @@ func TestPushStackCommentErrorNonFatal(t *testing.T) {
 
 	if err := runTier(t, "new", "err-branch-b", "--on", "err-branch-a"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work on b")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
 	}
 
 	// Make only API calls fail — pr view/edit still work.
@@ -1573,21 +1181,27 @@ func TestPushStackCommentErrorNonFatal(t *testing.T) {
 }
 
 func TestSyncUpdatesMergedComments(t *testing.T) {
-	dir := setupTestEnv(t)
+	mock, dir := setupTestEnv(t)
+	withFakeGH(t)
+	mock.StackComments = true
 
 	recordFile := filepath.Join(dir, "gh_calls.log")
 	t.Setenv("FAKEGH_RECORD", recordFile)
-	setupPRCounter(t, dir)
-	setupRemote(t, dir)
+
+	// Use incrementing PR numbers.
+	prCounter := 42
+	mock.PushFn = func(_ context.Context, opts driver.PushOpts) (*driver.PushResult, error) {
+		if opts.ExistingPR != nil {
+			return &driver.PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
+		}
+		n := prCounter
+		prCounter++
+		return &driver.PushResult{PRNumber: n, Created: true}, nil
+	}
 
 	// Create two branches with PRs.
 	if err := runTier(t, "new", "merge-branch-a"); err != nil {
 		t.Fatalf("frond new: %v", err)
-	}
-	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
 	}
 	if err := runTier(t, "push"); err != nil {
 		t.Fatalf("frond push: %v", err)
@@ -1596,17 +1210,14 @@ func TestSyncUpdatesMergedComments(t *testing.T) {
 	if err := runTier(t, "new", "merge-branch-b", "--on", "merge-branch-a"); err != nil {
 		t.Fatalf("frond new: %v", err)
 	}
-	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work on b")
-	gitCmd.Dir = dir
-	if out, err := gitCmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %s\n%s", err, out)
-	}
 	if err := runTier(t, "push"); err != nil {
 		t.Fatalf("frond push: %v", err)
 	}
 
-	// Make fakegh report all PRs as MERGED.
-	t.Setenv("FAKEGH_PR_STATE", "MERGED")
+	// Make mock report all PRs as MERGED.
+	mock.PRStateFn = func(_ context.Context, _ int) (string, error) {
+		return "MERGED", nil
+	}
 
 	// Clear record to isolate sync calls.
 	os.Remove(recordFile)
@@ -1648,6 +1259,52 @@ func readGHCalls(t *testing.T, recordFile string) []string {
 	return lines
 }
 
+func TestPushSkipsStackCommentsWhenDriverUnsupported(t *testing.T) {
+	mock, dir := setupTestEnv(t)
+	withFakeGH(t)
+	// StackComments defaults to false, simulating a Graphite-like driver.
+
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+
+	// Use incrementing PR numbers.
+	prCounter := 42
+	mock.PushFn = func(_ context.Context, opts driver.PushOpts) (*driver.PushResult, error) {
+		if opts.ExistingPR != nil {
+			return &driver.PushResult{PRNumber: *opts.ExistingPR, Created: false}, nil
+		}
+		n := prCounter
+		prCounter++
+		return &driver.PushResult{PRNumber: n, Created: true}, nil
+	}
+
+	// Create two branches with PRs — enough for stack comments to trigger.
+	if err := runTier(t, "new", "no-comment-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	if err := runTier(t, "new", "no-comment-b", "--on", "no-comment-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+
+	os.Remove(recordFile)
+
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	// With StackComments=false, no comment API calls should be made.
+	calls := readGHCalls(t, recordFile)
+	for _, call := range calls {
+		if strings.Contains(call, "api") && strings.Contains(call, "comments") {
+			t.Errorf("expected no comment API calls with StackComments=false, got: %s", call)
+		}
+	}
+}
+
 func TestNewEmptySyncResult(t *testing.T) {
 	r := newEmptySyncResult()
 	if r.Merged == nil || r.Rebased == nil || r.Unblocked == nil || r.Conflicts == nil {
@@ -1655,5 +1312,193 @@ func TestNewEmptySyncResult(t *testing.T) {
 	}
 	if r.Reparented == nil || r.Blocked == nil {
 		t.Error("newEmptySyncResult should initialize all maps")
+	}
+}
+
+func TestInitDefault(t *testing.T) {
+	_, dir := setupTestEnv(t)
+
+	err := runTier(t, "init")
+	if err != nil {
+		t.Fatalf("frond init: %v", err)
+	}
+
+	s := readState(t, dir)
+	if s.Driver != "" {
+		t.Errorf("driver = %q, want empty (native)", s.Driver)
+	}
+	if s.Trunk != "main" {
+		t.Errorf("trunk = %q, want main", s.Trunk)
+	}
+}
+
+func TestInitJSON(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runTier(t, "init", "--json")
+	if err != nil {
+		t.Fatalf("frond init --json: %v", err)
+	}
+}
+
+func TestInitUnknownDriver(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runTier(t, "init", "--driver", "bogus")
+	if err == nil {
+		t.Fatal("expected error for unknown driver")
+	}
+	if !strings.Contains(err.Error(), "unknown driver") {
+		t.Errorf("error = %q, want containing 'unknown driver'", err.Error())
+	}
+}
+
+func TestInitPreservesExistingState(t *testing.T) {
+	_, dir := setupTestEnv(t)
+
+	// Create some state first.
+	if err := runTier(t, "new", "existing-branch"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+
+	// Init should not blow away existing branches.
+	if err := runTier(t, "init"); err != nil {
+		t.Fatalf("frond init: %v", err)
+	}
+
+	s := readState(t, dir)
+	if _, ok := s.Branches["existing-branch"]; !ok {
+		t.Error("init should preserve existing branches")
+	}
+}
+
+func TestSyncMergedPR(t *testing.T) {
+	mock, dir := setupTestEnv(t)
+
+	// Create parent and child branches.
+	if err := runTier(t, "new", "merged-branch"); err != nil {
+		t.Fatalf("frond new merged-branch: %v", err)
+	}
+	if err := runTier(t, "new", "child-of-merged", "--on", "merged-branch"); err != nil {
+		t.Fatalf("frond new child-of-merged: %v", err)
+	}
+
+	// Manually assign PR numbers to state.
+	s := readState(t, dir)
+	pr1 := 10
+	b := s.Branches["merged-branch"]
+	b.PR = &pr1
+	s.Branches["merged-branch"] = b
+	pr2 := 20
+	c := s.Branches["child-of-merged"]
+	c.PR = &pr2
+	s.Branches["child-of-merged"] = c
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "frond.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock PRState to return MERGED for PR #10.
+	mock.PRStateFn = func(_ context.Context, prNumber int) (string, error) {
+		if prNumber == 10 {
+			return "MERGED", nil
+		}
+		return "OPEN", nil
+	}
+
+	// Track retarget calls.
+	var retargetCalls []int
+	mock.RetargetPRFn = func(_ context.Context, prNumber int, _ string) error {
+		retargetCalls = append(retargetCalls, prNumber)
+		return nil
+	}
+
+	err = runTier(t, "sync")
+	if err != nil {
+		t.Fatalf("frond sync: %v", err)
+	}
+
+	// merged-branch should be removed, child reparented to main.
+	s = readState(t, dir)
+	if _, ok := s.Branches["merged-branch"]; ok {
+		t.Error("merged-branch should be removed from state")
+	}
+	child := s.Branches["child-of-merged"]
+	if child.Parent != "main" {
+		t.Errorf("child parent = %q, want main", child.Parent)
+	}
+
+	// Child PR should have been retargeted.
+	found := false
+	for _, n := range retargetCalls {
+		if n == 20 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected RetargetPR called for child PR #20")
+	}
+}
+
+func TestSyncRebaseConflict(t *testing.T) {
+	mock, _ := setupTestEnv(t)
+
+	if err := runTier(t, "new", "conflict-branch"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+
+	// Mock rebase to return a conflict error.
+	mock.RebaseFn = func(_ context.Context, _, branch string) error {
+		return &driver.RebaseConflictError{Branch: branch, Detail: "CONFLICT in file.go"}
+	}
+
+	err := runTier(t, "sync")
+
+	// Should return ExitError with code 2.
+	if err == nil {
+		t.Fatal("expected error from sync with conflict")
+	}
+	exitErr, ok := err.(*ExitError)
+	if !ok {
+		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != 2 {
+		t.Errorf("exit code = %d, want 2", exitErr.Code)
+	}
+}
+
+func TestResolveDriverFromState(t *testing.T) {
+	// Empty driver resolves to native.
+	st := &state.State{Driver: ""}
+	drv, err := resolveDriver(st)
+	if err != nil {
+		t.Fatalf("resolveDriver empty: %v", err)
+	}
+	if drv.Name() != "native" {
+		t.Errorf("Name() = %q, want native", drv.Name())
+	}
+
+	// Unknown driver errors.
+	st = &state.State{Driver: "bogus"}
+	_, err = resolveDriver(st)
+	if err == nil {
+		t.Fatal("expected error for unknown driver in state")
+	}
+
+	// driverOverride takes precedence.
+	mock := driver.NewMock()
+	driverOverride = mock
+	defer func() { driverOverride = nil }()
+
+	st = &state.State{Driver: "bogus"} // would fail without override
+	drv, err = resolveDriver(st)
+	if err != nil {
+		t.Fatalf("resolveDriver with override: %v", err)
+	}
+	if drv.Name() != "mock" {
+		t.Errorf("Name() = %q, want mock", drv.Name())
 	}
 }
