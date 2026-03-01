@@ -43,3 +43,8 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^ci:"
+
+release:
+  extra_files:
+    - glob: .floop/packs/nvandessel-frond-*.fpack
+      name_template: nvandessel-frond.fpack
