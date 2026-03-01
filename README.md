@@ -30,11 +30,7 @@ Requires [git](https://git-scm.com/) and [gh](https://cli.github.com/) (authenti
 If you use [floop](https://github.com/nvandessel/floop) (AI agent behavior learning), install the frond skill pack for best practices:
 
 ```bash
-# Download the pack
-curl -L -o frond.fpack https://github.com/nvandessel/frond/releases/latest/download/nvandessel-frond.fpack
-
-# Install it
-floop pack install frond.fpack
+floop pack install gh:nvandessel/frond
 ```
 
 This adds learned behaviors covering:
