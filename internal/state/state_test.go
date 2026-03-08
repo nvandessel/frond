@@ -15,8 +15,8 @@ import (
 )
 
 // setupGitRepo creates a minimal git repo in a temp dir and overrides
-// gitCommonDir to point there. It returns the git-common-dir path and a
-// cleanup function that restores the original gitCommonDir.
+// GitCommonDir to point there. It returns the git-common-dir path and a
+// cleanup function that restores the original GitCommonDir.
 func setupGitRepo(t *testing.T) (dir string) {
 	t.Helper()
 
@@ -37,13 +37,13 @@ func setupGitRepo(t *testing.T) (dir string) {
 
 	gitDir := filepath.Join(dir, ".git")
 
-	// Override the package-level gitCommonDir so all functions in this
+	// Override the package-level GitCommonDir so all functions in this
 	// package resolve paths inside our temp repo.
-	orig := gitCommonDir
-	gitCommonDir = func(_ context.Context) (string, error) {
+	orig := GitCommonDir
+	GitCommonDir = func(_ context.Context) (string, error) {
 		return gitDir, nil
 	}
-	t.Cleanup(func() { gitCommonDir = orig })
+	t.Cleanup(func() { GitCommonDir = orig })
 
 	return dir
 }
@@ -285,12 +285,12 @@ func TestReadOrInitMasterBranch(t *testing.T) {
 	run(t, dir, "git", "branch", "-M", "master")
 
 	// Override detectTrunk's git commands to run inside our temp dir.
-	origGitCommonDir := gitCommonDir
+	origGitCommonDir := GitCommonDir
 	gitDir := filepath.Join(dir, ".git")
-	gitCommonDir = func(_ context.Context) (string, error) {
+	GitCommonDir = func(_ context.Context) (string, error) {
 		return gitDir, nil
 	}
-	t.Cleanup(func() { gitCommonDir = origGitCommonDir })
+	t.Cleanup(func() { GitCommonDir = origGitCommonDir })
 
 	// We need detectTrunk to run git commands in the right repo.
 	// Override the PATH-relative git commands by changing to the dir.
@@ -372,11 +372,11 @@ func TestWriteCreatesParentDirs(t *testing.T) {
 	tmpDir := t.TempDir()
 	nestedDir := filepath.Join(tmpDir, "deeply", "nested", "gitdir")
 
-	orig := gitCommonDir
-	gitCommonDir = func(_ context.Context) (string, error) {
+	orig := GitCommonDir
+	GitCommonDir = func(_ context.Context) (string, error) {
 		return nestedDir, nil
 	}
-	t.Cleanup(func() { gitCommonDir = orig })
+	t.Cleanup(func() { GitCommonDir = orig })
 
 	ctx := context.Background()
 	s := &State{
@@ -407,11 +407,11 @@ func TestWriteReadOnlyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	orig := gitCommonDir
-	gitCommonDir = func(_ context.Context) (string, error) {
+	orig := GitCommonDir
+	GitCommonDir = func(_ context.Context) (string, error) {
 		return roDir, nil
 	}
-	t.Cleanup(func() { gitCommonDir = orig })
+	t.Cleanup(func() { GitCommonDir = orig })
 
 	// Make it read-only AFTER creating the dir.
 	os.Chmod(roDir, 0o555)
@@ -452,18 +452,18 @@ func TestLockDoubleLockFails(t *testing.T) {
 }
 
 func TestPathError(t *testing.T) {
-	// Override gitCommonDir to return an error.
-	orig := gitCommonDir
-	gitCommonDir = func(_ context.Context) (string, error) {
+	// Override GitCommonDir to return an error.
+	orig := GitCommonDir
+	GitCommonDir = func(_ context.Context) (string, error) {
 		return "", fmt.Errorf("git not found")
 	}
-	t.Cleanup(func() { gitCommonDir = orig })
+	t.Cleanup(func() { GitCommonDir = orig })
 
 	ctx := context.Background()
 
 	_, err := Path(ctx)
 	if err == nil {
-		t.Fatal("Path() should fail when gitCommonDir fails")
+		t.Fatal("Path() should fail when GitCommonDir fails")
 	}
 
 	_, err = Read(ctx)
@@ -478,7 +478,7 @@ func TestPathError(t *testing.T) {
 
 	_, err = Lock(ctx)
 	if err == nil {
-		t.Fatal("Lock() should fail when gitCommonDir fails")
+		t.Fatal("Lock() should fail when GitCommonDir fails")
 	}
 }
 
@@ -507,5 +507,43 @@ func TestReadOrInitExistingState(t *testing.T) {
 	}
 	if _, ok := s2.Branches["test-branch"]; !ok {
 		t.Error("ReadOrInit() re-initialized instead of reading existing state")
+	}
+}
+
+func TestDriverField(t *testing.T) {
+	setupGitRepo(t)
+	ctx := context.Background()
+
+	// Write state with driver field.
+	s := &State{
+		Version:  1,
+		Trunk:    "main",
+		Driver:   "graphite",
+		Branches: map[string]Branch{},
+	}
+	if err := Write(ctx, s); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := Read(ctx)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Driver != "graphite" {
+		t.Errorf("Driver = %q, want %q", got.Driver, "graphite")
+	}
+
+	// Empty driver should omit from JSON.
+	s.Driver = ""
+	if err := Write(ctx, s); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err = Read(ctx)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Driver != "" {
+		t.Errorf("Driver = %q, want empty", got.Driver)
 	}
 }

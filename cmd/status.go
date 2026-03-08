@@ -8,7 +8,7 @@ import (
 	"slices"
 
 	"github.com/nvandessel/frond/internal/dag"
-	"github.com/nvandessel/frond/internal/gh"
+	"github.com/nvandessel/frond/internal/driver"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -67,10 +67,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		readinessMap[ri.Name] = ri
 	}
 
-	// 5. If --fetch, get live PR states from GitHub.
+	// 5. If --fetch, get live PR states.
 	prStates := make(map[string]string)
 	if fetchFlag {
-		prStates = fetchPRStates(ctx, prNumbers)
+		drv, err := resolveDriver(s)
+		if err != nil {
+			return err
+		}
+		prStates = fetchPRStates(ctx, drv, prNumbers)
 	}
 
 	// 6. Output.
@@ -80,20 +84,20 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	return outputHuman(s.Trunk, branches, prNumbers, readinessMap, prStates)
 }
 
-// fetchPRStates calls gh.PRView for each branch that has a PR number.
+// fetchPRStates calls drv.PRState for each branch that has a PR number.
 // On individual failures it warns to stderr and continues.
-func fetchPRStates(ctx context.Context, prNumbers map[string]*int) map[string]string {
+func fetchPRStates(ctx context.Context, drv driver.Driver, prNumbers map[string]*int) map[string]string {
 	states := make(map[string]string)
 	for name, pr := range prNumbers {
 		if pr == nil {
 			continue
 		}
-		info, err := gh.PRView(ctx, *pr)
+		prState, err := drv.PRState(ctx, *pr)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to fetch PR #%d for %s: %v\n", *pr, name, err)
 			continue
 		}
-		states[name] = info.State
+		states[name] = prState
 	}
 	return states
 }

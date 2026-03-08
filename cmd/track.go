@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nvandessel/frond/internal/git"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -49,8 +48,14 @@ func runTrack(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("reading state: %w", err)
 	}
 
-	// 3. Validate branch exists locally
-	exists, err := git.BranchExists(ctx, name)
+	// 3. Resolve driver
+	drv, err := resolveDriver(s)
+	if err != nil {
+		return err
+	}
+
+	// 4. Validate branch exists locally
+	exists, err := drv.BranchExists(ctx, name)
 	if err != nil {
 		return fmt.Errorf("checking branch existence: %w", err)
 	}
@@ -63,12 +68,12 @@ func runTrack(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("branch '%s' is already tracked", name)
 	}
 
-	// 4. Validate --on branch exists (trunk or tracked)
+	// 5. Validate --on branch exists (trunk or tracked)
 	onFlag, _ := cmd.Flags().GetString("on")
 	if onFlag != s.Trunk {
 		if _, tracked := s.Branches[onFlag]; !tracked {
 			// Also check if branch exists in git at all
-			onExists, err := git.BranchExists(ctx, onFlag)
+			onExists, err := drv.BranchExists(ctx, onFlag)
 			if err != nil {
 				return fmt.Errorf("checking parent branch: %w", err)
 			}
@@ -80,19 +85,19 @@ func runTrack(cmd *cobra.Command, args []string) error {
 	}
 	parent := onFlag
 
-	// 5. Parse --after
+	// 6. Parse --after
 	afterFlag, _ := cmd.Flags().GetString("after")
 	var after []string
 	if afterFlag != "" {
 		after = strings.Split(afterFlag, ",")
 	}
 
-	// 6. Validate --after deps and check for cycles
+	// 7. Validate --after deps and check for cycles
 	if err := validateAfterDeps(s.Branches, name, after); err != nil {
 		return err
 	}
 
-	// 7. Add to state.Branches (no checkout, no git branch creation)
+	// 8. Add to state.Branches (no checkout, no git branch creation)
 	if after == nil {
 		after = []string{}
 	}
@@ -101,12 +106,12 @@ func runTrack(cmd *cobra.Command, args []string) error {
 		After:  after,
 	}
 
-	// 8. Write state
+	// 9. Write state
 	if err := state.Write(ctx, s); err != nil {
 		return fmt.Errorf("writing state: %w", err)
 	}
 
-	// 9. Output
+	// 10. Output
 	if jsonOut {
 		return printJSON(trackResult{
 			Name:   name,
