@@ -8,6 +8,7 @@ import (
 
 	"github.com/nvandessel/frond/internal/dag"
 	"github.com/nvandessel/frond/internal/gh"
+	"github.com/nvandessel/frond/internal/git"
 	"github.com/nvandessel/frond/internal/state"
 )
 
@@ -32,6 +33,11 @@ func updateStackComments(ctx context.Context, st *state.State) {
 		return
 	}
 
+	repoURL, err := git.RepoWebURL(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not determine repo URL: %v\n", err)
+	}
+
 	dagBranches := stateToDag(st.Branches)
 	readinessSlice := dag.ComputeReadiness(dagBranches)
 	readinessMap := make(map[string]dag.ReadinessInfo, len(readinessSlice))
@@ -49,7 +55,7 @@ func updateStackComments(ctx context.Context, st *state.State) {
 			continue
 		}
 
-		body := dag.RenderStackComment(st.Trunk, dagBranches, prNumbers, readinessMap, name)
+		body := dag.RenderStackComment(st.Trunk, dagBranches, prNumbers, readinessMap, name, repoURL)
 		if err := upsertComment(ctx, *b.PR, body); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: stack comment on PR #%d: %v\n", *b.PR, err)
 		}
@@ -60,6 +66,11 @@ func updateStackComments(ctx context.Context, st *state.State) {
 // it as merged and displaying the remaining stack. Called from sync after
 // merges are processed but before rebasing.
 func updateMergedComments(ctx context.Context, st *state.State, mergedData map[string]state.Branch) {
+	repoURL, err := git.RepoWebURL(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not determine repo URL: %v\n", err)
+	}
+
 	dagBranches := stateToDag(st.Branches)
 	readinessSlice := dag.ComputeReadiness(dagBranches)
 	readinessMap := make(map[string]dag.ReadinessInfo, len(readinessSlice))
@@ -76,7 +87,7 @@ func updateMergedComments(ctx context.Context, st *state.State, mergedData map[s
 		if b.PR == nil {
 			continue
 		}
-		body := dag.RenderMergedStackComment(st.Trunk, dagBranches, prNumbers, readinessMap, name)
+		body := dag.RenderMergedStackComment(st.Trunk, dagBranches, prNumbers, readinessMap, name, repoURL)
 		if err := upsertComment(ctx, *b.PR, body); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: merged stack comment on PR #%d: %v\n", *b.PR, err)
 		}

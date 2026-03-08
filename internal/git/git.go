@@ -140,6 +140,47 @@ func Rebase(ctx context.Context, onto, branch string) error {
 	return nil
 }
 
+// RepoWebURL returns the GitHub web URL for the repository by parsing
+// the origin remote URL. Supports SSH (git@github.com:owner/repo.git) and
+// HTTPS (https://github.com/owner/repo.git) formats. This is a local
+// operation with no network call.
+func RepoWebURL(ctx context.Context) (string, error) {
+	raw, err := run(ctx, "remote", "get-url", "origin")
+	if err != nil {
+		return "", fmt.Errorf("git remote get-url origin: %w", err)
+	}
+	return ParseRepoWebURL(raw)
+}
+
+// ParseRepoWebURL converts a git remote URL to a GitHub web URL.
+// SSH format: git@github.com:owner/repo.git → https://github.com/owner/repo
+// HTTPS format: https://github.com/owner/repo.git → https://github.com/owner/repo
+func ParseRepoWebURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+
+	// SSH format: git@github.com:owner/repo.git
+	if strings.HasPrefix(raw, "git@") {
+		// git@github.com:owner/repo.git → github.com:owner/repo.git
+		trimmed := strings.TrimPrefix(raw, "git@")
+		// Split on ":"
+		parts := strings.SplitN(trimmed, ":", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("cannot parse SSH remote URL: %s", raw)
+		}
+		host := parts[0]
+		path := strings.TrimSuffix(parts[1], ".git")
+		return "https://" + host + "/" + path, nil
+	}
+
+	// HTTPS format: https://github.com/owner/repo.git
+	if strings.HasPrefix(raw, "https://") || strings.HasPrefix(raw, "http://") {
+		url := strings.TrimSuffix(raw, ".git")
+		return url, nil
+	}
+
+	return "", fmt.Errorf("cannot parse remote URL: %s", raw)
+}
+
 // Push pushes a branch to origin with upstream tracking.
 // It runs: git push -u origin <branch>
 func Push(ctx context.Context, branch string) error {
