@@ -65,17 +65,10 @@ func updateStackComments(ctx context.Context, st *state.State) {
 // updateMergedComments posts a final stack comment on each merged PR showing
 // it as merged and displaying the remaining stack. Called from sync after
 // merges are processed but before rebasing.
-func updateMergedComments(ctx context.Context, st *state.State, mergedData map[string]state.Branch) {
+func updateMergedComments(ctx context.Context, st *state.State, mergedData map[string]state.Branch, connectedSets map[string]map[string]dag.BranchInfo) {
 	repoURL, err := git.RepoWebURL(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not determine repo URL: %v\n", err)
-	}
-
-	dagBranches := stateToDag(st.Branches)
-	readinessSlice := dag.ComputeReadiness(dagBranches)
-	readinessMap := make(map[string]dag.ReadinessInfo, len(readinessSlice))
-	for _, ri := range readinessSlice {
-		readinessMap[ri.Name] = ri
 	}
 
 	prNumbers := make(map[string]*int, len(st.Branches))
@@ -87,7 +80,16 @@ func updateMergedComments(ctx context.Context, st *state.State, mergedData map[s
 		if b.PR == nil {
 			continue
 		}
-		body := dag.RenderMergedStackComment(st.Trunk, dagBranches, prNumbers, readinessMap, name, repoURL)
+		connected := connectedSets[name]
+		if connected == nil {
+			connected = map[string]dag.BranchInfo{}
+		}
+		readinessSlice := dag.ComputeReadiness(connected)
+		readinessMap := make(map[string]dag.ReadinessInfo, len(readinessSlice))
+		for _, ri := range readinessSlice {
+			readinessMap[ri.Name] = ri
+		}
+		body := dag.RenderMergedStackComment(st.Trunk, connected, prNumbers, readinessMap, name, repoURL)
 		if err := upsertComment(ctx, *b.PR, body); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: merged stack comment on PR #%d: %v\n", *b.PR, err)
 		}

@@ -313,6 +313,69 @@ func renderChildren(sb *strings.Builder, node string, children map[string][]stri
 	}
 }
 
+// ConnectedStack returns the subset of branches that belong to the same
+// connected stack as the target branch. The connected stack is defined as:
+//  1. Walk up from target through Parent links to trunk (the "spine").
+//  2. Include all descendants of every branch on the spine.
+//
+// Branches not on the spine or descended from it are excluded.
+// Returns an empty map if target is not found in branches.
+func ConnectedStack(branches map[string]BranchInfo, target string) map[string]BranchInfo {
+	if _, ok := branches[target]; !ok {
+		return map[string]BranchInfo{}
+	}
+
+	// Step 1: Walk up the spine from target to trunk.
+	spine := make(map[string]bool)
+	cur := target
+	for {
+		spine[cur] = true
+		info, ok := branches[cur]
+		if !ok {
+			break
+		}
+		// If parent is not a tracked branch, we've reached trunk.
+		if _, parentTracked := branches[info.Parent]; !parentTracked {
+			break
+		}
+		cur = info.Parent
+	}
+
+	// Step 2: Build children map and collect all descendants of spine nodes.
+	children := make(map[string][]string)
+	for name, info := range branches {
+		children[info.Parent] = append(children[info.Parent], name)
+	}
+
+	connected := make(map[string]bool)
+	// Add all spine nodes.
+	for s := range spine {
+		connected[s] = true
+	}
+	// BFS/DFS from each spine node to collect descendants.
+	var collect func(node string)
+	collect = func(node string) {
+		for _, child := range children[node] {
+			if !connected[child] {
+				connected[child] = true
+				collect(child)
+			}
+		}
+	}
+	for s := range spine {
+		collect(s)
+	}
+
+	// Step 3: Filter branches.
+	result := make(map[string]BranchInfo, len(connected))
+	for name := range connected {
+		if info, ok := branches[name]; ok {
+			result[name] = info
+		}
+	}
+	return result
+}
+
 // CommentMarker is the HTML comment used to identify frond stack comments
 // on GitHub PRs. Used by both rendering (here) and upsert detection (cmd).
 const CommentMarker = "<!-- frond-stack -->"
@@ -323,7 +386,11 @@ const CommentMarker = "<!-- frond-stack -->"
 // tree is wrapped in <pre> tags instead of a code fence.
 // Returns a markdown string wrapped with the frond-stack marker.
 func RenderStackComment(trunk string, branches map[string]BranchInfo, prNumbers map[string]*int, readiness map[string]ReadinessInfo, highlight string, repoURL string) string {
-	tree := renderTree(trunk, branches, prNumbers, readiness, renderOpts{highlight: highlight, repoURL: repoURL})
+	filtered := branches
+	if highlight != "" {
+		filtered = ConnectedStack(branches, highlight)
+	}
+	tree := renderTree(trunk, filtered, prNumbers, readiness, renderOpts{highlight: highlight, repoURL: repoURL})
 
 	var sb strings.Builder
 	sb.WriteString(CommentMarker + "\n")
