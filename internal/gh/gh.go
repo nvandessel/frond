@@ -192,3 +192,28 @@ func PRState(ctx context.Context, prNumber int) (string, error) {
 	}
 	return info.State, nil
 }
+
+// PRForBranch looks up an open pull request for the given head branch.
+// It returns the PR number and true if one exists, or 0 and false if not.
+func PRForBranch(ctx context.Context, branch string) (int, bool, error) {
+	out, err := run(ctx, "pr", "list", "--head", branch, "--state", "open", "--json", "number", "--limit", "1")
+	if err != nil {
+		return 0, false, err
+	}
+
+	out = strings.TrimSpace(out)
+	if out == "" || out == "[]" {
+		return 0, false, nil
+	}
+
+	var prs []struct {
+		Number int `json:"number"`
+	}
+	if err := json.Unmarshal([]byte(out), &prs); err != nil {
+		return 0, false, fmt.Errorf("parsing pr list output: %w", err)
+	}
+	if len(prs) == 0 {
+		return 0, false, nil
+	}
+	return prs[0].Number, true, nil
+}

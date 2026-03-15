@@ -149,6 +149,7 @@ func installFakeGH(t *testing.T, dir string) {
 	t.Setenv("FAKEGH_PR_COUNTER", "")
 	t.Setenv("FAKEGH_PR_STATE", "")
 	t.Setenv("FAKEGH_EXISTING_COMMENT", "")
+	t.Setenv("FAKEGH_PR_FOR_BRANCH", "")
 }
 
 // resetCobraFlags resets all cobra flag values to their defaults so tests
@@ -1655,5 +1656,160 @@ func TestNewEmptySyncResult(t *testing.T) {
 	}
 	if r.Reparented == nil || r.Blocked == nil {
 		t.Error("newEmptySyncResult should initialize all maps")
+	}
+}
+
+func TestTrackDetectsExistingPR(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create a git branch manually (not via frond).
+	gitCmd := exec.Command("git", "checkout", "-b", "has-pr-branch", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout -b: %s\n%s", err, out)
+	}
+	gitCmd = exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout main: %s\n%s", err, out)
+	}
+
+	// Tell fakegh that "has-pr-branch" has an existing PR #55.
+	t.Setenv("FAKEGH_PR_FOR_BRANCH", "has-pr-branch:55")
+
+	err := runTier(t, "track", "has-pr-branch", "--on", "main")
+	if err != nil {
+		t.Fatalf("frond track: %v", err)
+	}
+
+	s := readState(t, dir)
+	b, ok := s.Branches["has-pr-branch"]
+	if !ok {
+		t.Fatal("branch 'has-pr-branch' not in frond.json")
+	}
+	if b.PR == nil {
+		t.Fatal("expected PR to be detected for tracked branch")
+	}
+	if *b.PR != 55 {
+		t.Errorf("PR = %d, want 55", *b.PR)
+	}
+}
+
+func TestTrackNoPRStoresNil(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	// Create a git branch manually (not via frond).
+	gitCmd := exec.Command("git", "checkout", "-b", "no-pr-branch", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout -b: %s\n%s", err, out)
+	}
+	gitCmd = exec.Command("git", "checkout", "main")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout main: %s\n%s", err, out)
+	}
+
+	// No FAKEGH_PR_FOR_BRANCH set, so no existing PR.
+	err := runTier(t, "track", "no-pr-branch", "--on", "main")
+	if err != nil {
+		t.Fatalf("frond track: %v", err)
+	}
+
+	s := readState(t, dir)
+	b := s.Branches["no-pr-branch"]
+	if b.PR != nil {
+		t.Errorf("expected PR to be nil, got %d", *b.PR)
+	}
+}
+
+func TestSyncUpdatesCommentsWithoutMerges(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	recordFile := filepath.Join(dir, "gh_calls.log")
+	t.Setenv("FAKEGH_RECORD", recordFile)
+	setupPRCounter(t, dir)
+	setupRemote(t, dir)
+
+	// Create two branches with PRs so stack comments are warranted.
+	if err := runTier(t, "new", "sync-comment-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "work on a")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	if err := runTier(t, "new", "sync-comment-b", "--on", "sync-comment-a"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	gitCmd = exec.Command("git", "commit", "--allow-empty", "-m", "work on b")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+	if err := runTier(t, "push"); err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	// Clear the record file to isolate sync calls.
+	os.Remove(recordFile)
+
+	// Sync with NO merges (PRs are OPEN by default).
+	// Before the fix, updateStackComments was only called when merges happened.
+	err := runTier(t, "sync")
+	if err != nil {
+		t.Fatalf("frond sync: %v", err)
+	}
+
+	// Verify that comment API calls were made even without merges.
+	calls := readGHCalls(t, recordFile)
+	var hasCommentAPI bool
+	for _, call := range calls {
+		if strings.Contains(call, "api") && strings.Contains(call, "comments") {
+			hasCommentAPI = true
+			break
+		}
+	}
+	if !hasCommentAPI {
+		t.Errorf("expected stack comment API calls during sync without merges, calls: %v", calls)
+	}
+}
+
+func TestPushAdoptsExistingPR(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	setupRemote(t, dir)
+
+	// Create a tracked branch with a commit.
+	if err := runTier(t, "new", "adopt-pr-branch"); err != nil {
+		t.Fatalf("frond new: %v", err)
+	}
+	gitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "feature work")
+	gitCmd.Dir = dir
+	if out, err := gitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s\n%s", err, out)
+	}
+
+	// Tell fakegh that a PR already exists for this branch.
+	t.Setenv("FAKEGH_PR_FOR_BRANCH", "adopt-pr-branch:77")
+
+	err := runTier(t, "push")
+	if err != nil {
+		t.Fatalf("frond push: %v", err)
+	}
+
+	// Verify the adopted PR number was saved (not a newly created one).
+	s := readState(t, dir)
+	b := s.Branches["adopt-pr-branch"]
+	if b.PR == nil {
+		t.Fatal("PR number not saved after push")
+	}
+	if *b.PR != 77 {
+		t.Errorf("PR number = %d, want 77 (adopted existing PR)", *b.PR)
 	}
 }

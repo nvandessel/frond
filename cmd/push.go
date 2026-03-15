@@ -89,7 +89,22 @@ func runPush(cmd *cobra.Command, args []string) error {
 	created := false
 	var prNumber int
 
-	// 7. If no PR exists, create one.
+	// 7. If no PR exists in state, check if one already exists on GitHub.
+	adopted := false
+	if br.PR == nil {
+		if existingPR, found, lookupErr := gh.PRForBranch(ctx, branch); lookupErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not check for existing PR: %v\n", lookupErr)
+		} else if found {
+			br.PR = &existingPR
+			st.Branches[branch] = br
+			if err := state.Write(ctx, st); err != nil {
+				return fmt.Errorf("writing state: %w", err)
+			}
+			adopted = true
+		}
+	}
+
+	// 8. If still no PR, create one.
 	if br.PR == nil {
 		title, _ := cmd.Flags().GetString("title")
 		if title == "" {
@@ -158,6 +173,8 @@ func runPush(cmd *cobra.Command, args []string) error {
 	action := "updated"
 	if created {
 		action = "created"
+	} else if adopted {
+		action = "adopted"
 	}
 	fmt.Printf("Pushed %s. PR #%d [%s]\n", branch, prNumber, action)
 

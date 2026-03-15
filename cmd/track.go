@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/nvandessel/frond/internal/gh"
 	"github.com/nvandessel/frond/internal/git"
 	"github.com/nvandessel/frond/internal/state"
 	"github.com/spf13/cobra"
@@ -96,9 +98,21 @@ func runTrack(cmd *cobra.Command, args []string) error {
 	if after == nil {
 		after = []string{}
 	}
+
+	// 7a. Check if a PR already exists for this branch on GitHub.
+	var prNum *int
+	if gh.Available() == nil {
+		if num, found, err := gh.PRForBranch(ctx, name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not check for existing PR: %v\n", err)
+		} else if found {
+			prNum = &num
+		}
+	}
+
 	s.Branches[name] = state.Branch{
 		Parent: parent,
 		After:  after,
+		PR:     prNum,
 	}
 
 	// 8. Write state
@@ -112,9 +126,13 @@ func runTrack(cmd *cobra.Command, args []string) error {
 			Name:   name,
 			Parent: parent,
 			After:  after,
+			PR:     prNum,
 		})
 	}
 	fmt.Printf("Tracking branch '%s' (parent: %s)\n", name, parent)
+	if prNum != nil {
+		fmt.Printf("Found existing PR #%d\n", *prNum)
+	}
 	if len(after) > 0 {
 		fmt.Printf("Dependencies: %s\n", strings.Join(after, ", "))
 	}
