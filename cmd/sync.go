@@ -101,6 +101,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Pre-compute connected stacks for each merged branch before modifying state.
+	// This captures which branches are in the same stack as each merged branch
+	// so that merged stack comments only show the connected branches.
+	preMergeDag := stateToDag(st.Branches)
+	connectedSets := make(map[string]map[string]dag.BranchInfo, len(mergedBranches))
+	for _, merged := range mergedBranches {
+		connectedSets[merged] = dag.ConnectedStack(preMergeDag, merged)
+	}
+
 	// Step 5: Process merged branches.
 	// reparentedFrom tracks what the old parent was for each reparented child.
 	reparentedFrom := make(map[string]string)
@@ -149,7 +158,22 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	// Step 5e: Update stack comments when merges changed the tree structure.
 	if len(mergedBranches) > 0 {
-		updateMergedComments(ctx, st, mergedData)
+		// Compute remaining connected branches for each merged branch.
+		// The connected set was computed pre-merge; now remove the merged branch
+		// itself and update parent refs to reflect the post-merge state.
+		postMergeDag := stateToDag(st.Branches)
+		postConnected := make(map[string]map[string]dag.BranchInfo, len(mergedBranches))
+		for _, merged := range mergedBranches {
+			preSet := connectedSets[merged]
+			filtered := make(map[string]dag.BranchInfo)
+			for name := range preSet {
+				if info, ok := postMergeDag[name]; ok {
+					filtered[name] = info
+				}
+			}
+			postConnected[merged] = filtered
+		}
+		updateMergedComments(ctx, st, mergedData, postConnected)
 		updateStackComments(ctx, st)
 	}
 

@@ -846,7 +846,190 @@ func TestRenderStackComment_EmptyRepoURL(t *testing.T) {
 	}
 }
 
+// ─── ConnectedStack Tests ───────────────────────────────────────────────────
+
+func TestConnectedStack_SingleStack(t *testing.T) {
+	// main → a1 → a2: targeting a1 should include both a1 and a2
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+		"a2": {Parent: "a1"},
+	}
+	result := ConnectedStack(branches, "a1")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 branches, got %d: %v", len(result), keys(result))
+	}
+	if _, ok := result["a1"]; !ok {
+		t.Error("expected a1 in result")
+	}
+	if _, ok := result["a2"]; !ok {
+		t.Error("expected a2 in result")
+	}
+}
+
+func TestConnectedStack_TwoIndependentStacks(t *testing.T) {
+	// Stack A: main → a1 → a2
+	// Stack B: main → b1 → b2
+	// Targeting a1 should only return a1, a2
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+		"a2": {Parent: "a1"},
+		"b1": {Parent: "main"},
+		"b2": {Parent: "b1"},
+	}
+	result := ConnectedStack(branches, "a1")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 branches, got %d: %v", len(result), keys(result))
+	}
+	if _, ok := result["a1"]; !ok {
+		t.Error("expected a1 in result")
+	}
+	if _, ok := result["a2"]; !ok {
+		t.Error("expected a2 in result")
+	}
+	if _, ok := result["b1"]; ok {
+		t.Error("b1 should not be in result")
+	}
+	if _, ok := result["b2"]; ok {
+		t.Error("b2 should not be in result")
+	}
+}
+
+func TestConnectedStack_TargetIsLeaf(t *testing.T) {
+	// main → a1 → a2: targeting a2 should include both a1 and a2
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+		"a2": {Parent: "a1"},
+	}
+	result := ConnectedStack(branches, "a2")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 branches, got %d: %v", len(result), keys(result))
+	}
+	if _, ok := result["a1"]; !ok {
+		t.Error("expected a1 in result")
+	}
+	if _, ok := result["a2"]; !ok {
+		t.Error("expected a2 in result")
+	}
+}
+
+func TestConnectedStack_TargetIsMiddle(t *testing.T) {
+	// main → a1 → a2 → a3: targeting a2 should include a1, a2, a3
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+		"a2": {Parent: "a1"},
+		"a3": {Parent: "a2"},
+	}
+	result := ConnectedStack(branches, "a2")
+	if len(result) != 3 {
+		t.Fatalf("expected 3 branches, got %d: %v", len(result), keys(result))
+	}
+}
+
+func TestConnectedStack_BranchingStack(t *testing.T) {
+	// main → a1 → a2
+	//            → a3
+	// Targeting a2 should include a1, a2, a3 (a3 is sibling via shared ancestor a1)
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+		"a2": {Parent: "a1"},
+		"a3": {Parent: "a1"},
+	}
+	result := ConnectedStack(branches, "a2")
+	if len(result) != 3 {
+		t.Fatalf("expected 3 branches, got %d: %v", len(result), keys(result))
+	}
+}
+
+func TestConnectedStack_TargetNotFound(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+	}
+	result := ConnectedStack(branches, "nonexistent")
+	if len(result) != 0 {
+		t.Fatalf("expected 0 branches for unknown target, got %d", len(result))
+	}
+}
+
+func TestConnectedStack_SingleBranch(t *testing.T) {
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+	}
+	result := ConnectedStack(branches, "a1")
+	if len(result) != 1 {
+		t.Fatalf("expected 1 branch, got %d", len(result))
+	}
+}
+
+func TestRenderStackComment_FiltersToConnectedStack(t *testing.T) {
+	// Two independent stacks: a1→a2 and b1→b2
+	// Comment for a1 should NOT show b1 or b2
+	branches := map[string]BranchInfo{
+		"a1": {Parent: "main"},
+		"a2": {Parent: "a1"},
+		"b1": {Parent: "main"},
+		"b2": {Parent: "b1"},
+	}
+	prNumbers := map[string]*int{
+		"a1": intPtr(1),
+		"a2": intPtr(2),
+		"b1": intPtr(3),
+		"b2": intPtr(4),
+	}
+	readiness := map[string]ReadinessInfo{
+		"a1": {Name: "a1", Ready: true},
+		"a2": {Name: "a2", Ready: true},
+		"b1": {Name: "b1", Ready: true},
+		"b2": {Name: "b2", Ready: true},
+	}
+
+	result := RenderStackComment("main", branches, prNumbers, readiness, "a1", "")
+
+	if !strings.Contains(result, "a1") {
+		t.Errorf("expected a1 in output:\n%s", result)
+	}
+	if !strings.Contains(result, "a2") {
+		t.Errorf("expected a2 in output:\n%s", result)
+	}
+	if strings.Contains(result, "b1") {
+		t.Errorf("b1 should not appear in a1's stack comment:\n%s", result)
+	}
+	if strings.Contains(result, "b2") {
+		t.Errorf("b2 should not appear in a1's stack comment:\n%s", result)
+	}
+}
+
+func TestRenderMergedStackComment_WithPreFilteredBranches(t *testing.T) {
+	// Caller should pre-filter to only pass connected branches.
+	// After merging a1, only a2 remains in the connected stack.
+	branches := map[string]BranchInfo{
+		"a2": {Parent: "main"},
+	}
+	prNumbers := map[string]*int{
+		"a2": intPtr(2),
+	}
+	readiness := map[string]ReadinessInfo{
+		"a2": {Name: "a2", Ready: true},
+	}
+
+	result := RenderMergedStackComment("main", branches, prNumbers, readiness, "a1", "")
+
+	if !strings.Contains(result, "**a1** has been merged") {
+		t.Errorf("missing merged message:\n%s", result)
+	}
+	if !strings.Contains(result, "a2") {
+		t.Errorf("expected a2 in remaining stack:\n%s", result)
+	}
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+func keys(m map[string]BranchInfo) []string {
+	result := make([]string, 0, len(m))
+	for k := range m {
+		result = append(result, k)
+	}
+	return result
+}
 
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {
