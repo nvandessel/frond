@@ -156,7 +156,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing state: %w", err)
 	}
 
-	// Step 5e: Update stack comments when merges changed the tree structure.
+	// Step 5e: Update merged PR comments when merges happened.
 	if len(mergedBranches) > 0 {
 		// Compute remaining connected branches for each merged branch.
 		// The connected set was computed pre-merge; now remove the merged branch
@@ -174,8 +174,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 			postConnected[merged] = filtered
 		}
 		updateMergedComments(ctx, st, mergedData, postConnected)
-		updateStackComments(ctx, st)
 	}
+
+	// Step 5f: Always update stack comments so newly tracked PRs get comments.
+	updateStackComments(ctx, st)
 
 	// Step 6: Rebase remaining branches in topological order.
 	dagBranches := stateToDag(st.Branches)

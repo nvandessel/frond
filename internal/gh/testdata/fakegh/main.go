@@ -130,6 +130,27 @@ func main() {
 				prState = s
 			}
 			fmt.Printf("{\"number\": %s, \"state\": \"%s\", \"baseRefName\": \"main\"}\n", prNum, prState)
+		case "list":
+			// Return an existing PR if FAKEGH_PR_FOR_BRANCH is set to a
+			// "branch:number" pair matching the --head flag value.
+			prForBranch := os.Getenv("FAKEGH_PR_FOR_BRANCH")
+			if prForBranch != "" {
+				// Parse --head value from args.
+				var headBranch string
+				for i := 2; i < len(args); i++ {
+					if args[i] == "--head" && i+1 < len(args) {
+						headBranch = args[i+1]
+						break
+					}
+				}
+				// FAKEGH_PR_FOR_BRANCH format: "branch:number"
+				parts := strings.SplitN(prForBranch, ":", 2)
+				if len(parts) == 2 && parts[0] == headBranch {
+					fmt.Printf("[{\"number\": %s}]\n", parts[1])
+					os.Exit(0)
+				}
+			}
+			fmt.Println("[]")
 		case "edit":
 			// no output
 		}

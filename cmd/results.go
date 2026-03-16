@@ -17,6 +17,7 @@ type trackResult struct {
 	Name   string   `json:"name"`
 	Parent string   `json:"parent"`
 	After  []string `json:"after"`
+	PR     *int     `json:"pr"`
 }
 
 // pushResult is the JSON output of "frond push".
