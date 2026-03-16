@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-03-16
+
+### Fixed
+
+- **Stack comments scoped to connected branches** — PR comments now only show branches in the same stack, not every tracked branch (#67)
+- **Comments applied for pre-existing PRs** — `frond track` and `frond push` now detect PRs created outside of frond and adopt them; `frond sync` always updates stack comments, not just after merges (#68)
+
+### Added
+
+- `ConnectedStack` in the `dag` package for filtering branches to a connected subtree
+- `PRForBranch` in the `gh` package for detecting existing PRs by branch name
+
 ## [0.2.0] - 2026-02-27
 
 ### Added
@@ -41,5 +53,6 @@ First release. Minimal, agent-first CLI for managing stacked PRs with DAG depend
 - Homebrew tap via GoReleaser
 - CI with GitHub Actions on Ubuntu and macOS
 
+[0.3.2]: https://github.com/nvandessel/frond/releases/tag/v0.3.2
 [0.2.0]: https://github.com/nvandessel/frond/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nvandessel/frond/releases/tag/v0.1.0
